@@ -18,11 +18,21 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
-# Build with output logging
+# Build with error capture
 RUN echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
-    npm run build
+    echo "Current directory contents:" && ls -la && \
+    echo "Running build..." && \
+    npm run build 2>&1 | tee build.log || { \
+        echo "Build failed. Build log:"; \
+        cat build.log; \
+        echo "Contents of .next directory (if it exists):"; \
+        ls -la .next || true; \
+        echo "Contents of node_modules:"; \
+        ls -la node_modules || true; \
+        exit 1; \
+    }
 
 # Production stage
 FROM node:18-alpine AS runner
