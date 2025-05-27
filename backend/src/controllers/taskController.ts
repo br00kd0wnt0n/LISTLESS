@@ -26,6 +26,9 @@ export default class TaskController {
       const tasks = await TaskModel.find({ createdBy: userId })
         .sort({ createdAt: -1 });
 
+      // Prevent caching of the task list
+      res.setHeader('Cache-Control', 'no-store');
+
       res.json({
         success: true,
         data: tasks,
