@@ -1,5 +1,5 @@
 # Use Node.js 18 as the base image
-FROM node:18-alpine AS builder
+FROM node:18-alpine
 
 # Set working directory
 WORKDIR /app
@@ -9,24 +9,14 @@ COPY package*.json ./
 COPY .npmrc ./
 
 # Install dependencies
-RUN npm ci
+RUN npm install
 
 # Copy the rest of the application
 COPY . .
 
 # Build the application
+ENV NEXT_TELEMETRY_DISABLED 1
 RUN npm run build
-
-# Production image
-FROM node:18-alpine AS runner
-
-WORKDIR /app
-
-# Copy necessary files from builder
-COPY --from=builder /app/next.config.js ./
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
 
 # Set environment variables
 ENV NODE_ENV=production
@@ -37,4 +27,4 @@ ENV NEXT_PUBLIC_API_URL=https://listless-backend-production.up.railway.app
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "server.js"] 
+CMD ["npm", "start"] 

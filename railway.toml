@@ -3,13 +3,11 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
-restartPolicy = "on-failure"
-restartPolicyMaxRetries = 10
 
 [env]
 NODE_ENV = "production"
 PORT = "3000"
-NEXT_PUBLIC_API_URL = "https://listless-backend-production.up.railway.app" 
+NEXT_PUBLIC_API_URL = "https://listless-backend-production.up.railway.app"
+NEXT_TELEMETRY_DISABLED = "1" 
