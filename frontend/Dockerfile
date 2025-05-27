@@ -18,22 +18,34 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
-# Build with error capture
+# Print environment variables (excluding sensitive ones)
+RUN echo "Environment check:" && \
+    echo "NODE_ENV: $NODE_ENV" && \
+    echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL" && \
+    echo "Current directory contents:" && ls -la
+
+# Build with enhanced error capture
 RUN set -o pipefail && \
     echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
-    echo "Current directory contents:" && ls -la && \
     echo "Running build..." && \
     (npm run build 2>&1 | tee /tmp/build.log) || { \
-        echo "Build failed. Build log:"; \
+        echo "=== Build failed ==="; \
+        echo "Build log:"; \
         cat /tmp/build.log; \
-        echo "Contents of .next directory (if it exists):"; \
+        echo "=== Environment ==="; \
+        env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort; \
+        echo "=== Directory Contents ==="; \
+        echo "Current directory:"; \
+        ls -la; \
+        echo "Next.js build directory:"; \
         ls -la .next || true; \
-        echo "Contents of node_modules:"; \
+        echo "Node modules:"; \
         ls -la node_modules || true; \
-        echo "TypeScript errors (if any):"; \
+        echo "=== TypeScript Check ==="; \
         npx tsc --noEmit || true; \
+        echo "=== End of Error Report ==="; \
         exit 1; \
     }
 
@@ -51,7 +63,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Set environment variables
 ENV NODE_ENV production
 ENV PORT 3000
-ENV NEXT_PUBLIC_API_URL https://listless-backend-production.up.railway.app
+
+# Note: NEXT_PUBLIC_API_URL should be set at runtime via Railway environment variables
+# This ensures it can be updated without rebuilding the container
 
 # Expose the port
 EXPOSE 3000
