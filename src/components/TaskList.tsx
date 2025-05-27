@@ -108,7 +108,7 @@ export function TaskList() {
                   <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                     <span>⏱️ {task.estimatedTime} min</span>
                     <span>📋 {task.status}</span>
-                    <span>📅 {new Date(task.createdAt).toLocaleDateString()}</span>
+                    <span>📅 {task.createdAt ? new Date(task.createdAt).toLocaleDateString() : 'No date'}</span>
                   </div>
                 </div>
                 
