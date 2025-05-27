@@ -1,15 +1,13 @@
 'use client';
 
-import { useTasks } from '@/hooks/useTasks';
-import { useEffect } from 'react';
-
-export function TaskList() {
-  const { tasks, loading, error, completeTask, deleteTask, fetchTasks } = useTasks('default-user');
-
-  useEffect(() => {
-    fetchTasks().catch(console.error);
-  }, [fetchTasks]);
-
+export function TaskList({ tasks, loading, error, completeTask, deleteTask, fetchTasks }: {
+  tasks: any[],
+  loading: boolean,
+  error: string | null,
+  completeTask: any,
+  deleteTask: any,
+  fetchTasks: any
+}) {
   const handleCompleteTask = async (taskId: string) => {
     try {
       await completeTask(taskId, 0); // We'll add actual time tracking later
@@ -21,7 +19,6 @@ export function TaskList() {
 
   const handleDeleteTask = async (taskId: string) => {
     if (!confirm('Are you sure you want to delete this task?')) return;
-
     try {
       await deleteTask(taskId);
     } catch (error) {
@@ -71,7 +68,6 @@ export function TaskList() {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
           Your Tasks
         </h2>
-        
         <div className="space-y-3">
           {tasks.map(task => (
             <div key={task._id} className="bg-white border rounded-lg p-4">
@@ -94,24 +90,20 @@ export function TaskList() {
                        task.priority === 'medium' ? '🟡' : '🟢'} {task.priority}
                     </span>
                   </div>
-                  
                   <h3 className="text-lg font-medium text-gray-900">
                     {task.title}
                   </h3>
-                  
                   {task.description && (
                     <p className="mt-1 text-sm text-gray-600">
                       {task.description}
                     </p>
                   )}
-                  
                   <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
                     <span>⏱️ {task.estimatedTime} min</span>
                     <span>📋 {task.status}</span>
                     <span>📅 {task.createdAt ? new Date(task.createdAt).toLocaleDateString() : 'No date'}</span>
                   </div>
                 </div>
-                
                 <div className="flex space-x-2">
                   {task.status !== 'completed' && task._id && (
                     <button

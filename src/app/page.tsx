@@ -1,7 +1,9 @@
+import { useTasks } from '@/hooks/useTasks';
 import { TaskInput } from '@/components/TaskInput';
 import { TaskList } from '@/components/TaskList';
 
 export default function Home() {
+  const tasksHook = useTasks('default-user');
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-4 py-8">
@@ -20,11 +22,11 @@ export default function Home() {
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 What's on your mind?
               </h2>
-              <TaskInput />
+              <TaskInput {...tasksHook} />
             </div>
 
             <div className="bg-white rounded-lg shadow-sm border p-6">
-              <TaskList />
+              <TaskList {...tasksHook} />
             </div>
           </div>
         </div>

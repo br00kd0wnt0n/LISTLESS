@@ -2,14 +2,10 @@
 
 import { useState } from 'react';
 import { useAI } from '@/hooks/useAI';
-import { useTasks } from '@/hooks/useTasks';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
-export function TaskInput() {
+export function TaskInput({ createTask, fetchTasks }: { createTask: any, fetchTasks: any }) {
   const [input, setInput] = useState('');
   const { processTaskInput, processing, error: aiError } = useAI();
-  const { createTask, fetchTasks } = useTasks('default-user');
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
