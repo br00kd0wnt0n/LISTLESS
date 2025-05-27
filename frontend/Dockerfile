@@ -8,18 +8,18 @@ WORKDIR /app
 COPY package*.json ./
 COPY .npmrc ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies with verbose output
+RUN npm install --verbose
 
 # Copy the rest of the application
 COPY . .
 
-# Build the application
+# Build the application with verbose output
 ENV NEXT_TELEMETRY_DISABLED 1
-RUN npm run build
+ENV NODE_ENV production
+RUN npm run build --verbose || (echo "Build failed. Contents of .next directory:" && ls -la .next && exit 1)
 
 # Set environment variables
-ENV NODE_ENV=production
 ENV PORT=3000
 ENV NEXT_PUBLIC_API_URL=https://listless-backend-production.up.railway.app
 
