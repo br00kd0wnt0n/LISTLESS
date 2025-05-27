@@ -28,7 +28,13 @@ RUN echo "Starting build process..." && \
     echo "Running build..." && \
     NODE_ENV=production npm run build 2>&1 | tee build.log && \
     echo "Build completed. Contents of .next:" && \
-    ls -la .next
+    ls -la .next && \
+    echo "Verifying standalone directory:" && \
+    if [ ! -d ".next/standalone" ]; then \
+        echo "Standalone directory not found. Build output:"; \
+        cat build.log; \
+        exit 1; \
+    fi
 
 # Production stage
 FROM node:18-alpine AS runner
