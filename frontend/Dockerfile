@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY .npmrc ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with debug output
+RUN npm ci --loglevel verbose
 
 # Copy the rest of the application
 COPY . .
@@ -18,13 +18,17 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 ENV NEXT_DEBUG 1
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Try to build and capture any errors
-RUN set -e; \
-    echo "Starting build process..."; \
-    npm run build || { \
-        echo "Build failed. Showing error logs:"; \
-        cat .next/build-error.log || true; \
+# Try to build with more detailed output
+RUN echo "Starting build process..." && \
+    echo "Node version:" && node -v && \
+    echo "NPM version:" && npm -v && \
+    echo "Current directory contents:" && ls -la && \
+    echo "Running build..." && \
+    NODE_ENV=production npm run build 2>&1 | tee build.log || { \
+        echo "Build failed. Build log:"; \
+        cat build.log; \
         echo "Contents of .next directory:"; \
         ls -la .next || true; \
         echo "Contents of current directory:"; \

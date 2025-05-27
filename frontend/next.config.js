@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
+  reactStrictMode: true,
+  swcMinify: true,
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   },
@@ -15,13 +18,6 @@ const nextConfig = {
         ],
       },
     ];
-  },
-  output: 'standalone',
-  reactStrictMode: true,
-  swcMinify: true,
-  experimental: {
-    optimizeCss: true,
-    optimizePackageImports: ['@heroicons/react'],
   },
 };
 
