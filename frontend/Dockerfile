@@ -20,8 +20,8 @@ ENV NODE_ENV production
 
 # Set default API URL for build time
 # This will be overridden at runtime via Railway environment variables
-ENV NEXT_PUBLIC_API_URL="http://localhost:3001"
-ENV API_URL="http://localhost:3001"
+ENV NEXT_PUBLIC_API_URL="https://listless-backend-production.up.railway.app"
+ENV API_URL="https://listless-backend-production.up.railway.app"
 
 # Print environment variables (excluding sensitive ones)
 RUN echo "Environment check:" && \
@@ -30,13 +30,15 @@ RUN echo "Environment check:" && \
     echo "API_URL: $API_URL" && \
     echo "Current directory contents:" && ls -la
 
-# Build with direct output and error capture
+# Build with direct output
 RUN echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
     echo "Running build..." && \
-    # Run build with direct output
-    npm run build || ( \
+    # First run the build and capture its output
+    npm run build 2>&1 | tee /tmp/build.log && \
+    # Check the exit status
+    if [ ${PIPESTATUS[0]} -ne 0 ]; then \
         echo "=== Build Failed ===" && \
         echo "=== Environment ===" && \
         env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort && \
@@ -50,8 +52,8 @@ RUN echo "Starting build process..." && \
         echo "=== TypeScript Check ===" && \
         npx tsc --noEmit || true && \
         echo "=== End of Error Report ===" && \
-        exit 1 \
-    )
+        exit 1; \
+    fi
 
 # Production stage
 FROM node:18-alpine AS runner
