@@ -24,19 +24,13 @@ RUN echo "Environment check:" && \
     echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL" && \
     echo "Current directory contents:" && ls -la
 
-# Build with enhanced error capture
-RUN set -ex && \
-    echo "Starting build process..." && \
+# Build with direct output and error capture
+RUN echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
     echo "Running build..." && \
-    # First, run the build and capture its output
-    npm run build > /tmp/build.log 2>&1 || BUILD_FAILED=$? && \
-    # Always show the build log
-    echo "=== Build Log ===" && \
-    cat /tmp/build.log && \
-    # If build failed, show additional debugging info
-    if [ -n "$BUILD_FAILED" ]; then \
+    # Run build with direct output
+    npm run build || ( \
         echo "=== Build Failed ===" && \
         echo "=== Environment ===" && \
         env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort && \
@@ -50,8 +44,8 @@ RUN set -ex && \
         echo "=== TypeScript Check ===" && \
         npx tsc --noEmit || true && \
         echo "=== End of Error Report ===" && \
-        exit $BUILD_FAILED; \
-    fi
+        exit 1 \
+    )
 
 # Production stage
 FROM node:18-alpine AS runner
