@@ -35,10 +35,8 @@ RUN echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
     echo "Running build..." && \
-    # First run the build and capture its output
-    npm run build 2>&1 | tee /tmp/build.log && \
-    # Check the exit status
-    if [ ${PIPESTATUS[0]} -ne 0 ]; then \
+    # Run build and capture output
+    npm run build || { \
         echo "=== Build Failed ===" && \
         echo "=== Environment ===" && \
         env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort && \
@@ -53,7 +51,7 @@ RUN echo "Starting build process..." && \
         npx tsc --noEmit || true && \
         echo "=== End of Error Report ===" && \
         exit 1; \
-    fi
+    }
 
 # Production stage
 FROM node:18-alpine AS runner
