@@ -25,29 +25,33 @@ RUN echo "Environment check:" && \
     echo "Current directory contents:" && ls -la
 
 # Build with enhanced error capture
-RUN set -o pipefail && \
+RUN set -ex && \
     echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
     echo "Running build..." && \
-    (npm run build 2>&1 | tee /tmp/build.log) || { \
-        echo "=== Build failed ==="; \
-        echo "Build log:"; \
-        cat /tmp/build.log; \
-        echo "=== Environment ==="; \
-        env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort; \
-        echo "=== Directory Contents ==="; \
-        echo "Current directory:"; \
-        ls -la; \
-        echo "Next.js build directory:"; \
-        ls -la .next || true; \
-        echo "Node modules:"; \
-        ls -la node_modules || true; \
-        echo "=== TypeScript Check ==="; \
-        npx tsc --noEmit || true; \
-        echo "=== End of Error Report ==="; \
-        exit 1; \
-    }
+    # First, run the build and capture its output
+    npm run build > /tmp/build.log 2>&1 || BUILD_FAILED=$? && \
+    # Always show the build log
+    echo "=== Build Log ===" && \
+    cat /tmp/build.log && \
+    # If build failed, show additional debugging info
+    if [ -n "$BUILD_FAILED" ]; then \
+        echo "=== Build Failed ===" && \
+        echo "=== Environment ===" && \
+        env | grep -v "SECRET\|KEY\|PASSWORD\|TOKEN" | sort && \
+        echo "=== Directory Contents ===" && \
+        echo "Current directory:" && \
+        ls -la && \
+        echo "Next.js build directory:" && \
+        ls -la .next || true && \
+        echo "Node modules:" && \
+        ls -la node_modules || true && \
+        echo "=== TypeScript Check ===" && \
+        npx tsc --noEmit || true && \
+        echo "=== End of Error Report ===" && \
+        exit $BUILD_FAILED; \
+    fi
 
 # Production stage
 FROM node:18-alpine AS runner
