@@ -18,10 +18,16 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
+# Set default API URL for build time
+# This will be overridden at runtime via Railway environment variables
+ENV NEXT_PUBLIC_API_URL="http://localhost:3001"
+ENV API_URL="http://localhost:3001"
+
 # Print environment variables (excluding sensitive ones)
 RUN echo "Environment check:" && \
     echo "NODE_ENV: $NODE_ENV" && \
     echo "NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL" && \
+    echo "API_URL: $API_URL" && \
     echo "Current directory contents:" && ls -la
 
 # Build with direct output and error capture
@@ -62,8 +68,9 @@ COPY --from=builder /app/node_modules ./node_modules
 ENV NODE_ENV production
 ENV PORT 3000
 
-# Note: NEXT_PUBLIC_API_URL should be set at runtime via Railway environment variables
-# This ensures it can be updated without rebuilding the container
+# Note: NEXT_PUBLIC_API_URL and API_URL should be set at runtime via Railway environment variables
+# The build-time values are only used during the build process
+# These environment variables will be overridden by Railway's environment variables
 
 # Expose the port
 EXPOSE 3000
