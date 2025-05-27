@@ -3,10 +3,17 @@ import mongoose from 'mongoose';
 
 const connectDatabase = async (): Promise<void> => {
   try {
-    const mongoUri = process.env.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/listless?authSource=admin';
+    const mongoUri = process.env.MONGODB_URI;
     
-    console.log('Attempting to connect to MongoDB with URI:', mongoUri);
-    await mongoose.connect(mongoUri);
+    if (!mongoUri) {
+      throw new Error('MONGODB_URI environment variable is not set');
+    }
+    
+    console.log('Attempting to connect to MongoDB...');
+    await mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+    });
     console.log('MongoDB connected successfully');
   } catch (error) {
     console.error('MongoDB connection error:', error);
