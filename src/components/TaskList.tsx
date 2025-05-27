@@ -113,22 +113,24 @@ export function TaskList() {
                 </div>
                 
                 <div className="flex space-x-2">
-                  {task.status !== 'completed' && (
+                  {task.status !== 'completed' && task._id && (
                     <button
-                      onClick={() => handleCompleteTask(task._id)}
+                      onClick={() => handleCompleteTask(task._id as string)}
                       className="p-2 text-gray-400 hover:text-green-600 transition-colors"
                       title="Mark as complete"
                     >
                       ✅
                     </button>
                   )}
-                  <button
-                    onClick={() => handleDeleteTask(task._id)}
-                    className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                    title="Delete task"
-                  >
-                    🗑️
-                  </button>
+                  {task._id && (
+                    <button
+                      onClick={() => handleDeleteTask(task._id as string)}
+                      className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                      title="Delete task"
+                    >
+                      🗑️
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

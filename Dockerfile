@@ -14,21 +14,23 @@ RUN npm ci
 # Copy the rest of the application
 COPY . .
 
-# Build the application with debug output
+# Build the application
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
-ENV NEXT_DEBUG 1
 
-# Try to build and capture any errors
-RUN set -e; \
-    echo "Starting build process..."; \
-    npm run build || { \
-        echo "Build failed. Showing error logs:"; \
-        cat .next/build-error.log || true; \
-        echo "Contents of .next directory:"; \
+# Build with error capture
+RUN echo "Starting build process..." && \
+    echo "Node version:" && node -v && \
+    echo "NPM version:" && npm -v && \
+    echo "Current directory contents:" && ls -la && \
+    echo "Running build..." && \
+    npm run build 2>&1 | tee build.log || { \
+        echo "Build failed. Build log:"; \
+        cat build.log; \
+        echo "Contents of .next directory (if it exists):"; \
         ls -la .next || true; \
-        echo "Contents of current directory:"; \
-        ls -la; \
+        echo "Contents of node_modules:"; \
+        ls -la node_modules || true; \
         exit 1; \
     }
 
