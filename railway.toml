@@ -8,7 +8,7 @@ restartPolicyMaxRetries = 10
 # Backend service configuration
 [[services]]
 name = "listless-backend"
-path = "backend"
+path = "../backend"
 buildCommand = "npm install && npm run build"
 startCommand = "npm start"
 healthcheckPath = "/health"
@@ -17,9 +17,9 @@ healthcheckTimeout = 100
 # Frontend service configuration
 [[services]]
 name = "listless-frontend"
-path = "frontend"
+path = "."
 buildCommand = "npm install && npm run build"
 startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
-dockerfilePath = "frontend/Dockerfile" 
+dockerfilePath = "Dockerfile" 
