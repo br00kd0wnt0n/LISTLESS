@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { useAI } from '@/hooks/useAI';
 import { useTasks } from '@/hooks/useTasks';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-
 export function TaskInput() {
   const [input, setInput] = useState('');
   const { processTaskInput, processing, error: aiError } = useAI();
