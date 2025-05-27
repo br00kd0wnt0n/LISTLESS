@@ -1,15 +1,10 @@
 // ===== frontend/src/app/layout.tsx =====
-import React from 'react';
-import type { Metadata } from 'next';
 import './globals.css';
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: "Listless - AI-Powered Task Management",
-  description: "Tell me what you need to do in plain English, and I'll help you organize it all.",
-  viewport: "width=device-width, initial-scale=1",
-  icons: {
-    icon: "/favicon.ico",
-  },
+  title: 'Listless - AI-Powered Task Management',
+  description: 'Manage your tasks with AI assistance',
 };
 
 export default function RootLayout({
@@ -19,8 +14,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-background text-foreground antialiased">
-        {children}
+      <body className="min-h-screen bg-gray-50">
+        <main className="container mx-auto px-4 py-8">
+          {children}
+        </main>
       </body>
     </html>
   );
