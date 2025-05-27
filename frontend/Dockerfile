@@ -8,33 +8,21 @@ WORKDIR /app
 COPY package*.json ./
 COPY .npmrc ./
 
-# Install dependencies with debug output
-RUN npm ci --loglevel verbose
+# Install dependencies
+RUN npm ci
 
 # Copy the rest of the application
 COPY . .
 
-# Build the application with debug output
+# Build the application
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
-ENV NEXT_DEBUG 1
-ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Try to build with more detailed output
+# Build with output logging
 RUN echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
-    echo "Current directory contents:" && ls -la && \
-    echo "Running build..." && \
-    NODE_ENV=production npm run build 2>&1 | tee build.log && \
-    echo "Build completed. Contents of .next:" && \
-    ls -la .next && \
-    echo "Verifying standalone directory:" && \
-    if [ ! -d ".next/standalone" ]; then \
-        echo "Standalone directory not found. Build output:"; \
-        cat build.log; \
-        exit 1; \
-    fi
+    npm run build
 
 # Production stage
 FROM node:18-alpine AS runner
@@ -43,9 +31,9 @@ WORKDIR /app
 
 # Copy necessary files from builder
 COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
 
 # Set environment variables
 ENV NODE_ENV production
@@ -56,4 +44,4 @@ ENV NEXT_PUBLIC_API_URL https://listless-backend-production.up.railway.app
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "server.js"] 
+CMD ["npm", "start"] 
