@@ -5,10 +5,21 @@ builder = "nixpacks"
 restartPolicy = "on-failure"
 restartPolicyMaxRetries = 10
 
-# This tells Railway to look for service-specific configs
-[service]
+# Backend service configuration
+[[services]]
+name = "listless-backend"
 path = "backend"
+buildCommand = "npm install && npm run build"
+startCommand = "npm start"
+healthcheckPath = "/health"
+healthcheckTimeout = 100
 
-# This tells Railway to look for service-specific configs
-[service]
-path = "frontend" 
+# Frontend service configuration
+[[services]]
+name = "listless-frontend"
+path = "frontend"
+buildCommand = "npm install && npm run build"
+startCommand = "npm start"
+healthcheckPath = "/"
+healthcheckTimeout = 100
+dockerfilePath = "frontend/Dockerfile" 

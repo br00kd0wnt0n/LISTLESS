@@ -2,10 +2,6 @@
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
-[deploy]
-healthcheckPath = "/"
-healthcheckTimeout = 100
-
 [env]
 NODE_ENV = "production"
 PORT = "3000"
