@@ -1,25 +1,15 @@
 [build]
-builder = "nixpacks"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 restartPolicy = "on-failure"
 restartPolicyMaxRetries = 10
-
-# Backend service configuration
-[[services]]
-name = "listless-backend"
-path = "../backend"
-buildCommand = "npm install && npm run build"
-startCommand = "npm start"
-healthcheckPath = "/health"
-healthcheckTimeout = 100
-
-# Frontend service configuration
-[[services]]
-name = "listless-frontend"
-path = "."
-buildCommand = "npm install && npm run build"
-startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
-dockerfilePath = "Dockerfile" 
+
+[env]
+NODE_ENV = "production"
+PORT = "3000"
+NEXT_PUBLIC_API_URL = "https://listless-backend-production.up.railway.app"
+NEXT_TELEMETRY_DISABLED = "1" 

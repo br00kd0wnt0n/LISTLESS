@@ -1,9 +1,0 @@
-[build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
-
-[env]
-NODE_ENV = "production"
-PORT = "3000"
-NEXT_PUBLIC_API_URL = "https://listless-backend-production.up.railway.app"
-NEXT_TELEMETRY_DISABLED = "1" 
