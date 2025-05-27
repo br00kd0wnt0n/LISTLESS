@@ -19,18 +19,21 @@ ENV NEXT_TELEMETRY_DISABLED 1
 ENV NODE_ENV production
 
 # Build with error capture
-RUN echo "Starting build process..." && \
+RUN set -o pipefail && \
+    echo "Starting build process..." && \
     echo "Node version:" && node -v && \
     echo "NPM version:" && npm -v && \
     echo "Current directory contents:" && ls -la && \
     echo "Running build..." && \
-    npm run build 2>&1 | tee build.log || { \
+    (npm run build 2>&1 | tee /tmp/build.log) || { \
         echo "Build failed. Build log:"; \
-        cat build.log; \
+        cat /tmp/build.log; \
         echo "Contents of .next directory (if it exists):"; \
         ls -la .next || true; \
         echo "Contents of node_modules:"; \
         ls -la node_modules || true; \
+        echo "TypeScript errors (if any):"; \
+        npx tsc --noEmit || true; \
         exit 1; \
     }
 
