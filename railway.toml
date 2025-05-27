@@ -1,0 +1,14 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+restartPolicy = "on-failure"
+restartPolicyMaxRetries = 10
+
+# This tells Railway to look for service-specific configs
+[service]
+path = "backend"
+
+# This tells Railway to look for service-specific configs
+[service]
+path = "frontend" 
