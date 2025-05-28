@@ -2,12 +2,18 @@
 
 import { useState } from 'react';
 import { useAI } from '@/hooks/useAI';
-import { useTasks } from '@/hooks/useTasks';
+import { Task } from '@/lib/api';
 
-export function TaskInput() {
+interface TaskInputProps {
+  tasksState: {
+    createTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<Task>;
+    fetchTasks: () => Promise<void>;
+  };
+}
+
+export function TaskInput({ tasksState }: TaskInputProps) {
   const [input, setInput] = useState('');
   const { processTaskInput, processing, error: aiError } = useAI();
-  const { createTask, fetchTasks } = useTasks('default-user');
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -21,8 +27,13 @@ export function TaskInput() {
       const processedTasks = await processTaskInput(input.trim(), 'default-user');
       console.log('AI processed tasks:', processedTasks);
       
-      // Refresh the task list to show the new tasks
-      await fetchTasks();
+      // Create each task in the backend
+      for (const task of processedTasks) {
+        await tasksState.createTask(task);
+      }
+      
+      // Fetch updated task list
+      await tasksState.fetchTasks();
       
       // Clear input on success
       setInput('');

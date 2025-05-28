@@ -66,8 +66,11 @@ export default class TaskController {
       }
 
       const taskData = req.body;
+      // Remove _id if it exists to let MongoDB generate it
+      const { _id, ...taskDataWithoutId } = taskData;
+      
       const task = new TaskModel({
-        ...taskData,
+        ...taskDataWithoutId,
         createdBy: userId
       });
 
@@ -84,7 +87,10 @@ export default class TaskController {
       console.error('Error creating task:', error);
       res.status(500).json({
         success: false,
-        error: { message: 'Failed to create task' }
+        error: { 
+          message: 'Failed to create task',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }
       });
     }
   }

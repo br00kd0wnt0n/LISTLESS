@@ -33,7 +33,7 @@ export function useTasks(userId: string = 'default-user') {
       const response = await api.createTask(task, userId);
       
       if (response.success && response.data) {
-        setTasks(prev => [...prev, response.data!]);
+        // Don't update state here - let fetchTasks handle it
         return response.data;
       } else {
         throw new Error(response.error || 'Failed to create task');

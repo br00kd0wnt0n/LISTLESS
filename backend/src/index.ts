@@ -26,7 +26,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 // Middleware
 const allowedOrigins = process.env.NODE_ENV === 'production' 
   ? ['https://listless-frontend-production.up.railway.app'] // Specific frontend domain in production
-  : ['http://localhost:3000', 'http://localhost:3002'];
+  : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3002'];
 
 app.use(cors({
   origin: allowedOrigins,

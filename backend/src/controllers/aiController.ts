@@ -99,27 +99,19 @@ Focus on extracting actionable tasks. If the input mentions time estimates, use 
         throw new Error('Invalid AI response format');
       }
 
-      // Create tasks in database
-      const createdTasks: ITask[] = [];
-      if (parsedResponse.tasks && Array.isArray(parsedResponse.tasks)) {
-        for (const taskData of parsedResponse.tasks) {
-          const task = new TaskModel({
-            ...taskData,
-            createdBy: userId,
-            originalInput: input,
-            aiProcessed: true,
-            status: 'todo'
-          });
-
-          await task.save();
-          createdTasks.push(task);
-        }
-      }
+      // Instead of creating tasks, just return the processed tasks
+      const processedTasks = parsedResponse.tasks.map(taskData => ({
+        ...taskData,
+        createdBy: userId,
+        originalInput: input,
+        aiProcessed: true,
+        status: 'todo'
+      }));
 
       res.json({
         success: true,
         data: {
-          tasks: createdTasks,
+          tasks: processedTasks,
           clarifications: parsedResponse.clarifications || [],
           originalInput: input
         },

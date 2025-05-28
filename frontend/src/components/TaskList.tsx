@@ -1,10 +1,21 @@
 'use client';
 
-import { useTasks } from '@/hooks/useTasks';
 import { useEffect } from 'react';
+import { Task } from '@/lib/api';
 
-export function TaskList() {
-  const { tasks, loading, error, completeTask, deleteTask, fetchTasks } = useTasks('default-user');
+interface TaskListProps {
+  tasksState: {
+    tasks: Task[];
+    loading: boolean;
+    error: string | null;
+    fetchTasks: () => Promise<void>;
+    completeTask: (id: string, actualTime: number) => Promise<Task>;
+    deleteTask: (id: string) => Promise<void>;
+  };
+}
+
+export function TaskList({ tasksState }: TaskListProps) {
+  const { tasks, loading, error, completeTask, deleteTask, fetchTasks } = tasksState;
 
   useEffect(() => {
     fetchTasks().catch(console.error);
