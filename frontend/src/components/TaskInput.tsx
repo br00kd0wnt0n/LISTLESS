@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { TaskManager } from '@/hooks/useTaskManager';
 import { useUser } from '@/contexts/UserContext';
+import { CollapsibleTips } from './CollapsibleTips';
 
 interface TaskInputProps {
   taskManager: TaskManager;
@@ -96,26 +97,25 @@ export function TaskInput({ taskManager }: TaskInputProps) {
         </button>
       </form>
       
-      <div className="mt-4 text-sm text-gray-600">
-        <div className="mb-4">
-          <p className="font-medium">💡 <strong>Try saying:</strong></p>
-          <ul className="mt-2 space-y-1 text-gray-500">
+      <div className="mt-4 space-y-3">
+        <CollapsibleTips title="Try saying" icon="💡">
+          <ul className="space-y-1 text-gray-500">
             <li>• "Schedule a dentist appointment and pick up dry cleaning"</li>
             <li>• "Plan weekend meal prep and grocery shopping"</li>
             <li>• "Organize kids' school supplies before Monday"</li>
             <li>• "Prepare for next week's presentation by Friday, including research and slides"</li>
             <li>• "Plan the house renovation project to be completed by end of month"</li>
           </ul>
-        </div>
+        </CollapsibleTips>
         
-        <div>
-          <p className="font-medium">💡 <strong>Pro tip:</strong> Include deadlines in your input to get AI-powered workback scheduling. For example:</p>
-          <ul className="mt-2 space-y-1 text-gray-500">
+        <CollapsibleTips title="Pro tip" icon="💡">
+          <p className="text-gray-600 mb-2">Include deadlines in your input to get AI-powered workback scheduling. For example:</p>
+          <ul className="space-y-1 text-gray-500">
             <li>• "Need to complete the quarterly report by Friday"</li>
             <li>• "Plan the team building event for next month"</li>
             <li>• "Organize the conference by end of Q2"</li>
           </ul>
-        </div>
+        </CollapsibleTips>
       </div>
     </div>
   );
