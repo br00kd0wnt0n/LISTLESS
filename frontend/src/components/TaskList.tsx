@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Task } from '@/lib/api';
+import { ConfirmModal } from './ConfirmModal';
 
 interface TaskListProps {
   tasksState: {
@@ -16,6 +17,7 @@ interface TaskListProps {
 
 export function TaskList({ tasksState }: TaskListProps) {
   const { tasks, loading, error, completeTask, deleteTask, fetchTasks } = tasksState;
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   useEffect(() => {
     fetchTasks().catch(console.error);
@@ -30,14 +32,20 @@ export function TaskList({ tasksState }: TaskListProps) {
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
+  const handleDeleteClick = (task: Task) => {
+    setTaskToDelete(task);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!taskToDelete?._id) return;
 
     try {
-      await deleteTask(taskId);
+      await deleteTask(taskToDelete._id);
     } catch (error) {
       console.error('Failed to delete task:', error);
       alert('Failed to delete task. Please try again.');
+    } finally {
+      setTaskToDelete(null);
     }
   };
 
@@ -135,7 +143,7 @@ export function TaskList({ tasksState }: TaskListProps) {
                   )}
                   {task._id && (
                     <button
-                      onClick={() => handleDeleteTask(task._id as string)}
+                      onClick={() => handleDeleteClick(task)}
                       className="p-2 text-gray-400 hover:text-red-600 transition-colors"
                       title="Delete task"
                     >
@@ -148,6 +156,16 @@ export function TaskList({ tasksState }: TaskListProps) {
           ))}
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={!!taskToDelete}
+        onClose={() => setTaskToDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Task"
+        message={`Are you sure you want to delete "${taskToDelete?.title}"? This action cannot be undone.`}
+        confirmText="Delete Task"
+        cancelText="Cancel"
+      />
     </div>
   );
 }
