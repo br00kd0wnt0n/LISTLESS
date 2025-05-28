@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAI } from '@/hooks/useAI';
 import { Task } from '@/lib/api';
+import { useUser } from '@/contexts/UserContext';
 
 interface TaskInputProps {
   tasksState: {
@@ -15,6 +16,7 @@ export function TaskInput({ tasksState }: TaskInputProps) {
   const [input, setInput] = useState('');
   const { processTaskInput, processing, error: aiError } = useAI();
   const [error, setError] = useState<string | null>(null);
+  const { selectedUser } = useUser();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,8 +25,8 @@ export function TaskInput({ tasksState }: TaskInputProps) {
     try {
       setError(null);
       
-      // Process the input with AI
-      const processedTasks = await processTaskInput(input.trim(), 'default-user');
+      // Process the input with AI using the selected user
+      const processedTasks = await processTaskInput(input.trim(), selectedUser);
       console.log('AI processed tasks:', processedTasks);
       
       // Create each task in the backend

@@ -1,8 +1,11 @@
 // ===== frontend/src/hooks/useTasks.ts =====
 import { useState, useCallback } from 'react';
 import { api, Task } from '@/lib/api';
+import { User } from '@/contexts/UserContext';
 
-export function useTasks(userId: string = 'default-user') {
+type CreateTaskInput = Omit<Task, '_id'>;
+
+export function useTasks(userId: User) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,18 +30,32 @@ export function useTasks(userId: string = 'default-user') {
     }
   }, [userId]);
 
-  const createTask = useCallback(async (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => {
+  const createTask = useCallback(async (task: CreateTaskInput) => {
     try {
       setError(null);
-      const response = await api.createTask(task, userId);
+      const taskWithPossibleId = task as CreateTaskInput & { _id?: string };
+      console.log('Creating task with data:', {
+        task,
+        hasId: '_id' in taskWithPossibleId,
+        idValue: taskWithPossibleId._id,
+        keys: Object.keys(taskWithPossibleId)
+      });
+      
+      // Remove _id if it exists
+      const { _id, ...taskWithoutId } = taskWithPossibleId;
+      console.log('Task data after removing _id:', taskWithoutId);
+      
+      const response = await api.createTask(taskWithoutId, userId);
       
       if (response.success && response.data) {
         // Don't update state here - let fetchTasks handle it
         return response.data;
       } else {
+        console.error('Task creation failed:', response.error);
         throw new Error(response.error || 'Failed to create task');
       }
     } catch (err) {
+      console.error('Task creation error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to create task';
       setError(errorMessage);
       throw err;

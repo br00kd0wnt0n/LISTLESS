@@ -2,38 +2,38 @@
 
 import { TaskInput } from '@/components/TaskInput';
 import { TaskList } from '@/components/TaskList';
+import { UserSelector } from '@/components/UserSelector';
+import { UserProvider } from '@/contexts/UserContext';
 import { useTasks } from '@/hooks/useTasks';
+import { useUser } from '@/contexts/UserContext';
 
-export default function Home() {
-  const tasksState = useTasks('default-user');
+function TaskApp() {
+  const { selectedUser } = useUser();
+  const tasksState = useTasks(selectedUser);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto">
-          <header className="text-center mb-12">
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Welcome to <span className="text-blue-600">Listless</span>
-            </h1>
-            <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              Tell me what you need to do in plain English, and I'll help you organize it all.
-            </p>
-          </header>
-
-          <div className="space-y-8">
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                What's on your mind?
-              </h2>
-              <TaskInput tasksState={tasksState} />
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <TaskList tasksState={tasksState} />
-            </div>
-          </div>
+    <main className="min-h-screen bg-gray-50 py-8">
+      <div className="container mx-auto px-4">
+        <h1 className="text-3xl font-bold text-center text-gray-900 mb-8">
+          Listless
+        </h1>
+        
+        <UserSelector />
+        
+        <TaskInput tasksState={tasksState} />
+        
+        <div className="mt-8">
+          <TaskList tasksState={tasksState} />
         </div>
       </div>
-    </div>
+    </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <UserProvider>
+      <TaskApp />
+    </UserProvider>
   );
 }

@@ -4,13 +4,14 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface ITask extends Document {
   title: string;
   description?: string;
-  category: 'work' | 'household' | 'personal' | 'family' | 'health' | 'finance' | 'maintenance' | 'social';
+  category: 'work' | 'household' | 'personal' | 'family' | 'health' | 'finance' | 'maintenance' | 'social' | 'other';
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'todo' | 'in-progress' | 'completed' | 'cancelled' | 'deferred';
-  estimatedTime: number; // in minutes
-  actualTime?: number;
-  scheduledStart?: Date;
-  scheduledEnd?: Date;
+  status: 'todo' | 'in-progress' | 'completed' | 'cancelled' | 'deferred' | 'in_progress';
+  estimatedTime: number; // Duration in minutes
+  actualTime?: number; // Actual time taken in minutes
+  scheduledEnd?: string; // ISO date string
+  startBy?: string; // ISO date string for when to start
+  startByAlert?: string; // Friendly message with emoji
   completedAt?: Date;
   assignedTo?: string;
   createdBy: string;
@@ -21,7 +22,11 @@ export interface ITask extends Document {
   tags?: string[];
   originalInput?: string; // Store the original AI input
   aiProcessed?: boolean;
-  workback?: Array<{ title: string; scheduledEnd: Date }>;
+  workback?: Array<{
+    title: string;
+    scheduledEnd: string;
+    estimatedTime?: number;
+  }>;
 }
 
 const TaskSchema: Schema = new Schema({
@@ -30,8 +35,8 @@ const TaskSchema: Schema = new Schema({
   category: {
     type: String,
     required: true,
-    enum: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social'],
-    default: 'personal'
+    enum: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social', 'other'],
+    default: 'other'
   },
   priority: {
     type: String,
@@ -42,13 +47,14 @@ const TaskSchema: Schema = new Schema({
   status: {
     type: String,
     required: true,
-    enum: ['todo', 'in-progress', 'completed', 'cancelled', 'deferred'],
+    enum: ['todo', 'in-progress', 'completed', 'cancelled', 'deferred', 'in_progress'],
     default: 'todo'
   },
   estimatedTime: { type: Number, required: true, min: 1 },
   actualTime: { type: Number, min: 0 },
-  scheduledStart: { type: Date },
-  scheduledEnd: { type: Date },
+  scheduledEnd: { type: String },
+  startBy: { type: String },
+  startByAlert: { type: String },
   completedAt: { type: Date },
   assignedTo: { type: String },
   createdBy: { type: String, required: true },
@@ -60,7 +66,8 @@ const TaskSchema: Schema = new Schema({
   workback: [
     {
       title: { type: String, required: true },
-      scheduledEnd: { type: Date, required: true }
+      scheduledEnd: { type: String, required: true },
+      estimatedTime: { type: Number }
     }
   ]
 }, {
@@ -69,7 +76,7 @@ const TaskSchema: Schema = new Schema({
 
 // Indexes for better query performance
 TaskSchema.index({ createdBy: 1, status: 1 });
-TaskSchema.index({ scheduledStart: 1 });
+TaskSchema.index({ scheduledEnd: 1 });
 TaskSchema.index({ category: 1, priority: 1 });
 
 export default mongoose.model<ITask>('Task', TaskSchema);

@@ -14,6 +14,12 @@ export function useAI() {
       const response = await api.processTask(input, userId);
       
       if (response.success && response.data?.tasks) {
+        console.log('AI response tasks:', response.data.tasks.map(task => ({
+          title: task.title,
+          hasId: '_id' in task,
+          idValue: task._id,
+          keys: Object.keys(task)
+        })));
         return response.data.tasks;
       } else {
         throw new Error(response.error || 'Failed to process input');

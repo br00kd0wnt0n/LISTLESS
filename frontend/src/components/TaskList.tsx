@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Task } from '@/lib/api';
+import { Task, api } from '@/lib/api';
 import { ConfirmModal } from './ConfirmModal';
+import { DurationSelector } from './DurationSelector';
 
 interface TaskListProps {
   tasksState: {
@@ -10,8 +11,10 @@ interface TaskListProps {
     loading: boolean;
     error: string | null;
     fetchTasks: () => Promise<void>;
-    completeTask: (id: string, actualTime: number) => Promise<Task>;
+    createTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<Task>;
+    updateTask: (id: string, updates: Partial<Task>) => Promise<Task>;
     deleteTask: (id: string) => Promise<void>;
+    completeTask: (id: string, actualTime: number) => Promise<Task>;
   };
 }
 
@@ -58,8 +61,10 @@ function formatDate(dateString: string): string {
 }
 
 export function TaskList({ tasksState }: TaskListProps) {
-  const { tasks, loading, error, completeTask, deleteTask, fetchTasks } = tasksState;
+  const { tasks, loading, error, completeTask, deleteTask, fetchTasks, updateTask } = tasksState;
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [editingDuration, setEditingDuration] = useState<number | null>(null);
 
   useEffect(() => {
     fetchTasks().catch(console.error);
@@ -89,6 +94,40 @@ export function TaskList({ tasksState }: TaskListProps) {
     } finally {
       setTaskToDelete(null);
     }
+  };
+
+  const formatDuration = (minutes: number) => {
+    if (minutes < 60) {
+      return `${minutes}m`;
+    }
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (remainingMinutes === 0) {
+      return `${hours}h`;
+    }
+    return `${hours}h ${remainingMinutes}m`;
+  };
+
+  const handleDurationChange = async (taskId: string, newDuration: number) => {
+    try {
+      // Use the updateTask function from tasksState
+      await updateTask(taskId, { estimatedTime: newDuration });
+      setEditingTaskId(null);
+      setEditingDuration(null);
+      // Refresh the task list to ensure we have the latest data
+      await fetchTasks();
+    } catch (error) {
+      console.error('Failed to update task duration:', error);
+      // Show a more specific error message
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update task duration';
+      alert(`Failed to update task duration: ${errorMessage}`);
+    }
+  };
+
+  const startEditingDuration = (task: Task) => {
+    if (!task._id) return;
+    setEditingTaskId(task._id);
+    setEditingDuration(task.estimatedTime);
   };
 
   if (loading) {
@@ -167,7 +206,39 @@ export function TaskList({ tasksState }: TaskListProps) {
                   )}
                   
                   <div className="flex items-center space-x-4 mt-2 text-sm text-gray-500">
-                    <span>⏱️ {task.estimatedTime} min</span>
+                    {editingTaskId === task._id ? (
+                      <div className="flex items-center space-x-2">
+                        <DurationSelector
+                          value={editingDuration || task.estimatedTime}
+                          onChange={(newDuration) => {
+                            if (task._id) {
+                              handleDurationChange(task._id, newDuration);
+                            }
+                          }}
+                          className="w-32"
+                        />
+                        <button
+                          onClick={() => {
+                            setEditingTaskId(null);
+                            setEditingDuration(null);
+                          }}
+                          className="text-gray-400 hover:text-gray-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center space-x-2">
+                        <span>⏱️ {formatDuration(task.estimatedTime)}</span>
+                        <button
+                          onClick={() => startEditingDuration(task)}
+                          className="text-gray-400 hover:text-gray-600"
+                          title="Edit duration"
+                        >
+                          ✎
+                        </button>
+                      </div>
+                    )}
                     <span>📋 {task.status}</span>
                     {task.scheduledEnd && (
                       <span>⏰ Due: {formatDate(task.scheduledEnd.toString())}</span>

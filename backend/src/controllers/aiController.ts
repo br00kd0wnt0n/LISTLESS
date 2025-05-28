@@ -12,7 +12,13 @@ interface AITaskResponse {
     estimatedTime: number;
     tags?: string[];
     scheduledEnd?: string;
-    workback?: Array<{ title: string; scheduledEnd: string; }>;
+    workback?: Array<{ 
+      title: string; 
+      scheduledEnd: string;
+      estimatedTime: number;
+    }>;
+    startBy?: string;
+    startByAlert?: string;
   }>;
   clarifications?: string[];
 }
@@ -32,12 +38,112 @@ function getOpenAIClient() {
   return openai;
 }
 
+// Update the getRelativeDate function to ensure correct date handling
+function getRelativeDate(daysFromNow: number, hour?: number, minute?: number): string {
+  // Create date in NY timezone
+  const now = new Date();
+  const nyDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  nyDate.setDate(nyDate.getDate() + daysFromNow);
+  
+  // If specific time is provided, use it; otherwise use end of day
+  if (hour !== undefined && minute !== undefined) {
+    nyDate.setHours(hour, minute, 0, 0);
+  } else {
+    nyDate.setHours(23, 59, 59, 999);
+  }
+  
+  // Format the date in NY timezone with explicit year
+  const year = nyDate.getFullYear();
+  const month = String(nyDate.getMonth() + 1).padStart(2, '0');
+  const day = String(nyDate.getDate()).padStart(2, '0');
+  const hours = String(nyDate.getHours()).padStart(2, '0');
+  const minutes = String(nyDate.getMinutes()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
+}
+
 // Add this helper function after the getOpenAIClient function
-function getRelativeDate(daysFromNow: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromNow);
-  date.setHours(23, 59, 59, 999); // Set to end of day
-  return date.toISOString();
+function getCurrentTimeInNY(): string {
+  const now = new Date();
+  return now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true
+  });
+}
+
+// Add this helper function after getRelativeDate
+function roundToNearest5Minutes(minutes: number): number {
+  return Math.round(minutes / 5) * 5;
+}
+
+// Update the calculateWorkbackTimes function to handle timezone correctly and ensure proper ordering
+export interface WorkbackTime {
+  scheduledEnd: Date;
+  estimatedTime: number;
+}
+
+export function calculateWorkbackTimes(deadline: Date, totalDuration: number): WorkbackTime[] {
+  const workbackItems: WorkbackTime[] = [];
+  
+  // Convert deadline to NY timezone for consistent calculations
+  const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const nowNY = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  
+  // Calculate hours until deadline in NY timezone
+  const hoursUntilDeadline = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60 * 60);
+  
+  // Helper function to create NY timezone date string
+  const createNYDateString = (date: Date) => {
+    const nyDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const year = nyDate.getFullYear();
+    const month = String(nyDate.getMonth() + 1).padStart(2, '0');
+    const day = String(nyDate.getDate()).padStart(2, '0');
+    const hours = String(nyDate.getHours()).padStart(2, '0');
+    const minutes = String(nyDate.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
+  };
+  
+  let firstItemTime, secondItemTime;
+  let firstItemDuration, secondItemDuration;
+  
+  if (hoursUntilDeadline <= 2) {
+    // For tasks due within 2 hours
+    firstItemDuration = Math.floor(totalDuration * 0.25);
+    secondItemDuration = Math.floor(totalDuration * 0.75);
+    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
+    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
+  } else if (hoursUntilDeadline <= 4) {
+    // For tasks due within 4 hours
+    firstItemDuration = Math.floor(totalDuration * 0.3);
+    secondItemDuration = Math.floor(totalDuration * 0.7);
+    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
+    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
+  } else {
+    // For tasks due in more than 4 hours
+    firstItemDuration = Math.floor(totalDuration * 0.4);
+    secondItemDuration = Math.floor(totalDuration * 0.6);
+    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
+    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
+  }
+  
+  // Add items in chronological order
+  workbackItems.push({
+    scheduledEnd: new Date(createNYDateString(firstItemTime)),
+    estimatedTime: firstItemDuration
+  });
+  
+  workbackItems.push({
+    scheduledEnd: new Date(createNYDateString(secondItemTime)),
+    estimatedTime: secondItemDuration
+  });
+  
+  return workbackItems;
 }
 
 export class AIController {
@@ -56,65 +162,107 @@ export class AIController {
 
       // Get OpenAI client (will throw if API key is not configured)
       const client = getOpenAIClient();
+      const currentTimeNY = getCurrentTimeInNY();
+      const currentDateISO = new Date().toISOString();
 
-      // Create prompt for OpenAI with current date context
-      const currentDate = new Date().toISOString();
+      // Update the prompt in processTaskInput to emphasize correct date handling
       const prompt = `
 Extract task information from this natural language input: "${input}"
 
-Current date and time: ${currentDate}
+Current date and time in New York: ${currentTimeNY}
+Current date and time (ISO): ${currentDateISO}
 
-Please respond with a JSON object containing a "tasks" array (and an optional "clarifications" array). For each task, if a deadline (or due date) is mentioned (or can be inferred), include a "scheduledEnd" field (in ISO 8601 format). If a workback plan is needed (e.g. "finish project by Friday" → break down subtasks with deadlines), include a "workback" array (each subtask with a "title" and "scheduledEnd").
+Please respond with a JSON object containing a "tasks" array. For each task:
+1. ALWAYS include an "estimatedTime" field (in minutes) based on typical task complexity:
+   - Round all time estimates to the nearest 5 minutes (e.g., 15, 20, 25, 30, etc.)
+   - For tasks under 15 minutes, use 15 minutes as the minimum
+   - For tasks over 2 hours, round to the nearest 15 minutes
+2. For tasks with deadlines:
+   - If a task mentions "tonight" or "today" with a specific time:
+     * Use the specified time in America/New_York timezone for TODAY
+     * If the time has already passed today, use tomorrow at the same time
+     * If the time hasn't passed today, use today at that time
+   - If a task mentions "tomorrow", use TOMORROW (next day) with the specified time in America/New_York timezone
+   - If a specific time is mentioned (e.g., "10am"), use that time on the appropriate day in America/New_York timezone
+   - For tasks with "before X time", use that time as the deadline in America/New_York timezone
+   - For tasks with "by X time", use that time as the deadline in America/New_York timezone
+   - For reservations, use the reservation deadline (not the event time) as "scheduledEnd"
+   - CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates
+3. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
+4. Include a "startByAlert" field with a friendly message (e.g., "⏰ Start by 9:00 AM tomorrow to finish on time!")
+5. For workback schedules:
+   - ALWAYS include a "workback" array for tasks that:
+     * Have a deadline more than 24 hours away
+     * Require multiple steps or preparation
+     * Depend on other tasks or resources
+     * Are time-sensitive (like reservations, appointments, etc.)
+   - Each workback item must have:
+     * A descriptive title
+     * A scheduledEnd time (MUST be before the main task deadline)
+     * An estimatedTime in minutes (rounded to nearest 5 minutes)
+     * A clear sequence (e.g., "Step 1: Research", "Step 2: Draft", etc.)
+   - Workback schedule rules:
+     * For tasks due within 2 hours:
+       - First workback item should be due 25% of total time before the deadline
+       - Second workback item should be due 75% of total time before the deadline
+       - Total workback time should equal the main task's estimatedTime
+     * For tasks due within 4 hours:
+       - First workback item should be due 30% of total time before the deadline
+       - Second workback item should be due 70% of total time before the deadline
+       - Total workback time should equal the main task's estimatedTime
+     * For tasks due in more than 4 hours:
+       - First workback item should be due 40% of total time before the deadline
+       - Second workback item should be due 60% of total time before the deadline
+       - Total workback time should equal the main task's estimatedTime
+     * Each workback item should be spaced at least 15 minutes apart
+     * The first workback item should start at least 30 minutes before the last workback item
+     * CRITICAL: All workback times must use the current year (${new Date().getFullYear()})
 
-Important date handling rules:
-1. Use relative dates based on the current date (${currentDate})
-2. For "today", use end of current day
-3. For "tomorrow", use end of next day
-4. For "this week", use end of current week (Sunday)
-5. For "next week", use end of next week
-6. For "this month", use end of current month
-7. For "next month", use end of next month
-8. For specific days (e.g., "Friday"), use the next occurrence of that day
-9. For "end of month/quarter/year", use the actual end date
-10. For workback deadlines (e.g., "must be done by Thursday 6pm"), create a workback item with that deadline
-11. The main task's scheduledEnd should be the final deadline (e.g., the reservation time)
-12. Workback items should have earlier deadlines than the main task
-13. Always include specific times (e.g., "6pm") in the scheduledEnd when mentioned
-14. For reservations or time-sensitive tasks:
-    - The main task's scheduledEnd should be the actual event time (e.g., dinner at 8pm)
-    - The workback deadline should be the latest time to complete the action (e.g., make reservation by 6pm)
-    - Workback deadlines must be BEFORE the main task deadline
-15. All times should be in the local timezone (America/New_York)
-16. When a specific time is mentioned (e.g., "8pm"), use that exact time
-17. For reservation tasks:
-    - The main task deadline is when the reservation is for (e.g., Friday 8pm)
-    - The workback deadline is when the reservation must be made by (e.g., Thursday 6pm)
-    - The workback title should clearly indicate it's about making the reservation
+Important rules:
+1. All times must be in America/New_York timezone (-04:00)
+2. For relative dates:
+   - "tonight" or "today" with a specific time:
+     * If the time has passed today in NY timezone, use tomorrow at that time
+     * If the time hasn't passed today in NY timezone, use today at that time
+   - "tomorrow" means TOMORROW (next day) with the specified time in NY timezone
+   - If no specific time is mentioned, use end of day (11:59 PM) in NY timezone
+   - CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates
+3. Always estimate task duration in minutes, rounded to nearest 5 minutes
+4. For time-sensitive tasks:
+   - Calculate startBy = scheduledEnd - estimatedTime
+   - Include a friendly startByAlert with emoji
+   - For reservations, use the reservation deadline (not event time) as the main deadline
 
-Example for a reservation task:
-Input: "Make a dinner reservation at LUPO. Reservation for 7 people on Friday at 8pm. Reservation must be made by 6pm on Thursday"
-Response:
+Example response for a task with "tomorrow" deadline:
 {
   "tasks": [
     {
-      "title": "Dinner reservation at LUPO for 7 people",
-      "description": "Reservation for 7 people on Friday at 8pm",
-      "category": "personal",
+      "title": "Clean the car",
+      "description": "Clean the car before 10am tomorrow",
+      "category": "household",
       "priority": "high",
-      "estimatedTime": 15,
-      "tags": ["dining", "reservation"],
-      "scheduledEnd": "2024-03-22T20:00:00-04:00", // Friday 8pm ET
+      "estimatedTime": 60,
+      "scheduledEnd": "${getRelativeDate(1, 10, 0)}", // Tomorrow at 10am
+      "startBy": "${getRelativeDate(1, 9, 0)}", // Tomorrow at 9am
+      "startByAlert": "⏰ Start by 9:00 AM tomorrow to finish on time!",
       "workback": [
         {
-          "title": "Make reservation at LUPO by deadline",
-          "scheduledEnd": "2024-03-21T18:00:00-04:00" // Thursday 6pm ET
+          "title": "Step 1: Gather cleaning supplies",
+          "scheduledEnd": "${getRelativeDate(1, 9, 0)}", // Tomorrow at 9am
+          "estimatedTime": 20
+        },
+        {
+          "title": "Step 2: Start cleaning the car",
+          "scheduledEnd": "${getRelativeDate(1, 9, 30)}", // Tomorrow at 9:30am
+          "estimatedTime": 40
         }
-      ]
+      ],
+      "tags": ["cleaning", "car"]
     }
   ]
 }
 
-Focus on extracting actionable tasks. If the input mentions time estimates, use them; otherwise, make reasonable estimates based on typical task complexity.
+Focus on extracting actionable tasks with realistic time estimates (rounded to 5 minutes) and appropriate workback schedules. If the input mentions specific times, use them; otherwise, make reasonable estimates based on typical task complexity. CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates.
       `;
 
       const completion = await client.chat.completions.create({
@@ -147,16 +295,36 @@ Focus on extracting actionable tasks. If the input mentions time estimates, use 
         throw new Error('Invalid AI response format');
       }
 
-      // Instead of creating tasks, just return the processed tasks
-      const processedTasks = parsedResponse.tasks.map(taskData => ({
-        ...taskData,
-        createdBy: userId,
-        originalInput: input,
-        aiProcessed: true,
-        status: 'todo',
-        scheduledEnd: taskData.scheduledEnd,
-        workback: taskData.workback
-      }));
+      // After parsing the AI response, adjust workback times if needed
+      const processedTasks = parsedResponse.tasks.map(taskData => {
+        if (taskData.scheduledEnd && taskData.workback && taskData.estimatedTime) {
+          const deadline = new Date(taskData.scheduledEnd);
+          const workbackTimes = calculateWorkbackTimes(deadline, taskData.estimatedTime);
+          
+          // Round the main task's estimated time
+          taskData.estimatedTime = roundToNearest5Minutes(taskData.estimatedTime);
+          
+          // Update workback items with calculated times and rounded estimates, maintaining order
+          taskData.workback = workbackTimes.map((item, index) => ({
+            ...taskData.workback![index], // Keep the original title and other properties
+            scheduledEnd: item.scheduledEnd.toISOString(),
+            estimatedTime: roundToNearest5Minutes(item.estimatedTime)
+          }));
+        }
+        
+        return {
+          ...taskData,
+          createdBy: userId,
+          originalInput: input,
+          aiProcessed: true,
+          status: 'todo',
+          scheduledEnd: taskData.scheduledEnd,
+          startBy: taskData.startBy,
+          startByAlert: taskData.startByAlert,
+          workback: taskData.workback,
+          estimatedTime: roundToNearest5Minutes(taskData.estimatedTime || 30) // Default to 30 minutes if not provided
+        };
+      });
 
       res.json({
         success: true,

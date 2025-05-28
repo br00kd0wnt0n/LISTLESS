@@ -6,25 +6,28 @@ if (!API_URL) {
 }
 
 export interface Task {
-  _id?: string;
+  _id: string;
   title: string;
   description?: string;
-  category: 'household' | 'work' | 'personal' | 'health' | 'finance';
-  priority: 'urgent' | 'high' | 'medium' | 'low';
-  status: 'todo' | 'in-progress' | 'completed' | 'cancelled' | 'deferred';
+  category: string;
+  priority: string;
+  status: string;
   estimatedTime: number;
   actualTime?: number;
-  scheduledStart?: Date;
-  scheduledEnd?: Date;
-  workback?: {
+  scheduledEnd?: string;
+  startBy?: string;
+  startByAlert?: string;
+  workback?: Array<{
     title: string;
-    scheduledEnd: Date;
-    estimatedTime: number;
-  }[];
-  createdAt?: Date;
-  updatedAt?: Date;
-  completedAt?: Date;
+    scheduledEnd: string;
+    estimatedTime?: number;
+  }>;
+  tags?: string[];
   createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  aiProcessed?: boolean;
   originalInput?: string;
 }
 

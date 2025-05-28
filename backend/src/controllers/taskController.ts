@@ -4,6 +4,15 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import TaskModel, { ITask } from '../models/Task';
 import { validationResult } from 'express-validator';
+import { calculateWorkbackTimes, WorkbackTime } from './aiController';
+
+// Extend Express Request type to include user
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    email: string;
+  };
+}
 
 export default class TaskController {
   constructor() {
@@ -49,8 +58,12 @@ export default class TaskController {
   // Create a new task
   async createTask(req: Request, res: Response) {
     try {
+      console.log('Task creation request body:', JSON.stringify(req.body, null, 2));
+      console.log('Task creation query params:', JSON.stringify(req.query, null, 2));
+      
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        console.error('Task validation errors:', errors.array());
         return res.status(400).json({
           success: false,
           error: {
@@ -62,6 +75,7 @@ export default class TaskController {
 
       const userId = req.query.userId as string;
       if (!userId) {
+        console.error('Missing userId in query params');
         return res.status(400).json({ message: 'User ID is required' });
       }
 
@@ -100,19 +114,43 @@ export default class TaskController {
     try {
       const { taskId } = req.params;
       const updates = req.body;
+      const userId = req.query.userId as string;
 
-      const task = await TaskModel.findByIdAndUpdate(
-        taskId,
-        { ...updates, updatedAt: new Date() },
-        { new: true, runValidators: true }
-      );
-
-      if (!task) {
-        return res.status(404).json({
-          success: false,
-          error: { message: 'Task not found' }
-        });
+      if (!userId) {
+        return res.status(400).json({ message: 'User ID is required' });
       }
+
+      // Validate that we're not trying to update protected fields
+      const protectedFields = ['_id', 'createdBy', 'createdAt'];
+      const hasProtectedField = Object.keys(updates).some(field => protectedFields.includes(field));
+      if (hasProtectedField) {
+        return res.status(400).json({ message: 'Cannot update protected fields' });
+      }
+
+      // Validate task exists and belongs to user
+      const task = await TaskModel.findOne({ _id: taskId, createdBy: userId });
+      if (!task) {
+        return res.status(404).json({ message: 'Task not found' });
+      }
+
+      // If estimatedTime is being updated and the task has a deadline and workback schedule,
+      // recalculate the workback times
+      if (updates.estimatedTime && task.scheduledEnd && Array.isArray(task.workback) && task.workback.length > 0) {
+        const deadline = new Date(task.scheduledEnd);
+        const workbackTimes = calculateWorkbackTimes(deadline, updates.estimatedTime);
+        
+        // Update workback items with new times while preserving titles
+        updates.workback = workbackTimes.map((item: WorkbackTime, index: number) => ({
+          ...task.workback![index], // Keep the original title and other properties
+          scheduledEnd: item.scheduledEnd.toISOString(),
+          estimatedTime: item.estimatedTime
+        }));
+      }
+
+      // Update the task
+      Object.assign(task, updates);
+      task.updatedAt = new Date();
+      await task.save();
 
       res.json({
         success: true,
@@ -123,7 +161,7 @@ export default class TaskController {
       });
     } catch (error) {
       console.error('Error updating task:', error);
-      res.status(500).json({
+      res.status(500).json({ 
         success: false,
         error: { message: 'Failed to update task' }
       });
