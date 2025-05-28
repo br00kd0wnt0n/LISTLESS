@@ -39,9 +39,35 @@ interface ApiResponse<T> {
 
 async function handleResponse<T>(response: Response): Promise<ApiResponse<T>> {
   const data = await response.json();
+  
   if (!response.ok) {
-    throw new Error(data.error || 'An error occurred');
+    // Handle validation errors specifically
+    if (response.status === 400) {
+      if (data.error?.details) {
+        // Format validation errors
+        const validationErrors = data.error.details
+          .map((err: any) => `${err.param}: ${err.msg}`)
+          .join(', ');
+        throw new Error(`Validation failed: ${validationErrors}`);
+      } else if (data.error?.message) {
+        // Handle other error messages
+        throw new Error(data.error.message);
+      } else if (typeof data.error === 'string') {
+        // Handle string error messages
+        throw new Error(data.error);
+      } else if (data.error) {
+        // Handle error objects
+        const errorMessage = typeof data.error === 'object' 
+          ? JSON.stringify(data.error)
+          : String(data.error);
+        throw new Error(errorMessage);
+      }
+    }
+    // Handle other errors
+    const errorMessage = data.error?.message || data.error || 'Request failed';
+    throw new Error(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage));
   }
+  
   return data;
 }
 

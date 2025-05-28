@@ -38,7 +38,17 @@ export function useTasks(userId: User) {
         task,
         hasId: '_id' in taskWithPossibleId,
         idValue: taskWithPossibleId._id,
-        keys: Object.keys(taskWithPossibleId)
+        keys: Object.keys(taskWithPossibleId),
+        validation: {
+          hasTitle: !!task.title,
+          titleLength: task.title?.length,
+          hasCategory: !!task.category,
+          validCategory: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social'].includes(task.category),
+          hasPriority: !!task.priority,
+          validPriority: ['low', 'medium', 'high', 'urgent'].includes(task.priority),
+          hasEstimatedTime: typeof task.estimatedTime === 'number',
+          validEstimatedTime: typeof task.estimatedTime === 'number' && task.estimatedTime > 0
+        }
       });
       
       // Remove _id if it exists

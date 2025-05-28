@@ -18,44 +18,60 @@ interface TaskListProps {
   };
 }
 
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(0, 0, 0, 0);
+function formatDate(inputDateString: string): string {
+  // Convert input date to NY timezone for consistent comparison
+  const date = new Date(inputDateString);
+  const dateNY = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   
-  const nextWeek = new Date(now);
-  nextWeek.setDate(nextWeek.getDate() + 7);
-  nextWeek.setHours(0, 0, 0, 0);
+  // Get current date in NY timezone
+  const now = new Date();
+  const nowNY = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  
+  // Create tomorrow's date in NY timezone
+  const tomorrowNY = new Date(nowNY);
+  tomorrowNY.setDate(tomorrowNY.getDate() + 1);
+  tomorrowNY.setHours(0, 0, 0, 0);
+  
+  // Create next week's date in NY timezone
+  const nextWeekNY = new Date(nowNY);
+  nextWeekNY.setDate(nextWeekNY.getDate() + 7);
+  nextWeekNY.setHours(0, 0, 0, 0);
 
   // Check if the date has a specific time (not midnight)
-  const hasSpecificTime = date.getHours() !== 0 || date.getMinutes() !== 0;
+  const hasSpecificTime = dateNY.getHours() !== 0 || dateNY.getMinutes() !== 0;
   const timeString = hasSpecificTime ? 
-    date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+    dateNY.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : '';
 
-  // If it's today
-  if (date.toDateString() === now.toDateString()) {
+  // If it's today (comparing full dates in NY timezone)
+  if (dateNY.getFullYear() === nowNY.getFullYear() &&
+      dateNY.getMonth() === nowNY.getMonth() &&
+      dateNY.getDate() === nowNY.getDate()) {
     return hasSpecificTime ? `Today at ${timeString}` : 'Today';
   }
   
-  // If it's tomorrow
-  if (date.toDateString() === tomorrow.toDateString()) {
+  // If it's tomorrow (comparing full dates in NY timezone)
+  if (dateNY.getFullYear() === tomorrowNY.getFullYear() &&
+      dateNY.getMonth() === tomorrowNY.getMonth() &&
+      dateNY.getDate() === tomorrowNY.getDate()) {
     return hasSpecificTime ? `Tomorrow at ${timeString}` : 'Tomorrow';
   }
   
   // If it's within the next week
-  if (date < nextWeek) {
-    const weekday = date.toLocaleDateString('en-US', { weekday: 'long' }); // e.g., "Monday"
+  if (dateNY < nextWeekNY) {
+    const weekday = dateNY.toLocaleDateString('en-US', { 
+      weekday: 'long',
+      timeZone: 'America/New_York'
+    }); // e.g., "Monday"
     return hasSpecificTime ? `${weekday} at ${timeString}` : weekday;
   }
   
   // For dates further in the future, show the full date
-  const formattedDate = date.toLocaleDateString('en-US', { 
+  const formattedDate = dateNY.toLocaleDateString('en-US', { 
     month: 'short',
     day: 'numeric',
-    year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-  }); // e.g., "Mar 31" or "Mar 31, 2024"
+    year: dateNY.getFullYear() !== nowNY.getFullYear() ? 'numeric' : undefined,
+    timeZone: 'America/New_York'
+  });
   
   return hasSpecificTime ? `${formattedDate} at ${timeString}` : formattedDate;
 }

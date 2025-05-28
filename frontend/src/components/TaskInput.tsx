@@ -31,14 +31,26 @@ export function TaskInput({ tasksState }: TaskInputProps) {
       
       // Create each task in the backend
       for (const task of processedTasks) {
-        await tasksState.createTask(task);
+        try {
+          // Strip out _id field if it exists
+          const { _id, ...taskWithoutId } = task;
+          await tasksState.createTask(taskWithoutId);
+        } catch (taskError) {
+          console.error('Failed to create task:', taskError);
+          // Add the task title to the error message for context
+          const taskTitle = task.title || 'Untitled task';
+          const errorMessage = taskError instanceof Error ? taskError.message : 'Failed to create task';
+          setError(`Failed to create task "${taskTitle}": ${errorMessage}`);
+          // Don't continue creating other tasks if one fails
+          break;
+        }
       }
       
-      // Fetch updated task list
-      await tasksState.fetchTasks();
-      
-      // Clear input on success
-      setInput('');
+      // Only fetch tasks and clear input if all tasks were created successfully
+      if (!error) {
+        await tasksState.fetchTasks();
+        setInput('');
+      }
       
     } catch (error) {
       console.error('Failed to process task:', error);

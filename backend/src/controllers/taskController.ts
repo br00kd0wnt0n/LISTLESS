@@ -32,8 +32,20 @@ export default class TaskController {
         return res.status(400).json({ message: 'User ID is required' });
       }
 
-      const tasks = await TaskModel.find({ createdBy: userId })
-        .sort({ createdAt: -1 });
+      // First get tasks with scheduledEnd dates
+      const tasksWithDeadlines = await TaskModel.find({ 
+        createdBy: userId,
+        scheduledEnd: { $exists: true, $ne: null }
+      }).sort({ scheduledEnd: 1 });
+
+      // Then get tasks without scheduledEnd dates
+      const tasksWithoutDeadlines = await TaskModel.find({ 
+        createdBy: userId,
+        scheduledEnd: { $exists: false }
+      }).sort({ createdAt: -1 });
+
+      // Combine the results
+      const tasks = [...tasksWithDeadlines, ...tasksWithoutDeadlines];
 
       // Prevent caching of the task list
       res.setHeader('Cache-Control', 'no-store');
@@ -63,7 +75,16 @@ export default class TaskController {
       
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        console.error('Task validation errors:', errors.array());
+        console.error('Task validation errors:', {
+          errors: errors.array(),
+          requestBody: req.body,
+          validationRules: {
+            title: { required: true, minLength: 1, maxLength: 200 },
+            category: { required: true, validValues: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social'] },
+            priority: { required: true, validValues: ['low', 'medium', 'high', 'urgent'] },
+            estimatedTime: { required: true, type: 'number', min: 1 }
+          }
+        });
         return res.status(400).json({
           success: false,
           error: {

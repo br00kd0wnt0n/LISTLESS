@@ -38,10 +38,32 @@ function getOpenAIClient() {
   return openai;
 }
 
-// Update the getRelativeDate function to ensure correct date handling
+// Add this helper function at the top of the file after imports
+function getReferenceDate(): Date {
+  // Set reference date to May 27, 2025
+  const referenceDate = new Date('2025-05-27T00:00:00.000-04:00');
+  return referenceDate;
+}
+
+// Update getCurrentTimeInNY to use reference date
+function getCurrentTimeInNY(): string {
+  const now = getReferenceDate();
+  return now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York',
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: true
+  });
+}
+
+// Update getRelativeDate to use reference date
 function getRelativeDate(daysFromNow: number, hour?: number, minute?: number): string {
-  // Create date in NY timezone
-  const now = new Date();
+  // Create date in NY timezone using reference date
+  const now = getReferenceDate();
   const nyDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
   nyDate.setDate(nyDate.getDate() + daysFromNow);
   
@@ -62,21 +84,6 @@ function getRelativeDate(daysFromNow: number, hour?: number, minute?: number): s
   return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
 }
 
-// Add this helper function after the getOpenAIClient function
-function getCurrentTimeInNY(): string {
-  const now = new Date();
-  return now.toLocaleString('en-US', { 
-    timeZone: 'America/New_York',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true
-  });
-}
-
 // Add this helper function after getRelativeDate
 function roundToNearest5Minutes(minutes: number): number {
   return Math.round(minutes / 5) * 5;
@@ -86,6 +93,7 @@ function roundToNearest5Minutes(minutes: number): number {
 export interface WorkbackTime {
   scheduledEnd: Date;
   estimatedTime: number;
+  title: string;
 }
 
 export function calculateWorkbackTimes(deadline: Date, totalDuration: number): WorkbackTime[] {
@@ -93,7 +101,7 @@ export function calculateWorkbackTimes(deadline: Date, totalDuration: number): W
   
   // Convert deadline to NY timezone for consistent calculations
   const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const nowNY = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const nowNY = getReferenceDate(); // Use reference date instead of current date
   
   // Calculate hours until deadline in NY timezone
   const hoursUntilDeadline = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60 * 60);
@@ -109,39 +117,78 @@ export function calculateWorkbackTimes(deadline: Date, totalDuration: number): W
     return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
   };
   
-  let firstItemTime, secondItemTime;
+  // Calculate workback item durations based on total duration
   let firstItemDuration, secondItemDuration;
   
   if (hoursUntilDeadline <= 2) {
     // For tasks due within 2 hours
     firstItemDuration = Math.floor(totalDuration * 0.25);
     secondItemDuration = Math.floor(totalDuration * 0.75);
-    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
-    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
   } else if (hoursUntilDeadline <= 4) {
     // For tasks due within 4 hours
     firstItemDuration = Math.floor(totalDuration * 0.3);
     secondItemDuration = Math.floor(totalDuration * 0.7);
-    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
-    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
   } else {
     // For tasks due in more than 4 hours
     firstItemDuration = Math.floor(totalDuration * 0.4);
     secondItemDuration = Math.floor(totalDuration * 0.6);
-    secondItemTime = new Date(deadlineNY.getTime() - (secondItemDuration * 60 * 1000));
-    firstItemTime = new Date(secondItemTime.getTime() - (firstItemDuration * 60 * 1000));
   }
   
-  // Add items in chronological order
-  workbackItems.push({
-    scheduledEnd: new Date(createNYDateString(firstItemTime)),
-    estimatedTime: firstItemDuration
-  });
+  // Ensure minimum durations and round to nearest 5 minutes
+  firstItemDuration = Math.max(15, Math.round(firstItemDuration / 5) * 5);
+  secondItemDuration = Math.max(15, Math.round(secondItemDuration / 5) * 5);
   
-  workbackItems.push({
-    scheduledEnd: new Date(createNYDateString(secondItemTime)),
-    estimatedTime: secondItemDuration
-  });
+  // Add a 15-minute buffer between items
+  const bufferMinutes = 15;
+  
+  // Calculate end times for each item, working backwards from the deadline
+  const secondItemEnd = new Date(deadlineNY);
+  const secondItemStart = new Date(secondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
+  const firstItemEnd = new Date(secondItemStart.getTime() - (bufferMinutes * 60 * 1000));
+  const firstItemStart = new Date(firstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
+  
+  // Verify that items don't overlap and are in the future
+  if (firstItemEnd <= firstItemStart || secondItemEnd <= secondItemStart || firstItemEnd >= secondItemStart) {
+    // If there's an overlap, adjust the durations to fit within the available time
+    const totalAvailableMinutes = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60);
+    const adjustedTotalDuration = Math.min(totalDuration, totalAvailableMinutes - bufferMinutes);
+    
+    // Recalculate durations proportionally
+    firstItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.4) / 5) * 5);
+    secondItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.6) / 5) * 5);
+    
+    // Recalculate times
+    const newSecondItemEnd = new Date(deadlineNY);
+    const newSecondItemStart = new Date(newSecondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
+    const newFirstItemEnd = new Date(newSecondItemStart.getTime() - (bufferMinutes * 60 * 1000));
+    const newFirstItemStart = new Date(newFirstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
+    
+    // Add items in chronological order (earliest first)
+    workbackItems.push({
+      scheduledEnd: new Date(createNYDateString(newFirstItemEnd)),
+      estimatedTime: firstItemDuration,
+      title: 'Step 1: Initial preparation'
+    });
+    
+    workbackItems.push({
+      scheduledEnd: new Date(createNYDateString(newSecondItemEnd)),
+      estimatedTime: secondItemDuration,
+      title: 'Step 2: Final completion'
+    });
+  } else {
+    // Add items in chronological order (earliest first)
+    workbackItems.push({
+      scheduledEnd: new Date(createNYDateString(firstItemEnd)),
+      estimatedTime: firstItemDuration,
+      title: 'Step 1: Initial preparation'
+    });
+    
+    workbackItems.push({
+      scheduledEnd: new Date(createNYDateString(secondItemEnd)),
+      estimatedTime: secondItemDuration,
+      title: 'Step 2: Final completion'
+    });
+  }
   
   return workbackItems;
 }
@@ -163,23 +210,37 @@ export class AIController {
       // Get OpenAI client (will throw if API key is not configured)
       const client = getOpenAIClient();
       const currentTimeNY = getCurrentTimeInNY();
-      const currentDateISO = new Date().toISOString();
+      const currentDateISO = getReferenceDate().toISOString();
+      const currentYear = getReferenceDate().getFullYear();
 
-      // Update the prompt in processTaskInput to emphasize correct date handling
+      // Update the prompt to emphasize correct date handling
       const prompt = `
 Extract task information from this natural language input: "${input}"
 
 Current date and time in New York: ${currentTimeNY}
 Current date and time (ISO): ${currentDateISO}
+Current year: ${currentYear}
 
 Please respond with a JSON object containing a "tasks" array. For each task:
 1. ALWAYS include an "estimatedTime" field (in minutes) based on typical task complexity:
    - Round all time estimates to the nearest 5 minutes (e.g., 15, 20, 25, 30, etc.)
    - For tasks under 15 minutes, use 15 minutes as the minimum
    - For tasks over 2 hours, round to the nearest 15 minutes
-2. For tasks with deadlines:
+2. For task categories, use ONLY these valid values:
+   - "work" for work-related tasks
+   - "household" for home maintenance and chores
+   - "personal" for self-care, pet care, and individual activities
+   - "family" for family-related activities
+   - "health" for health and wellness
+   - "finance" for financial tasks
+   - "maintenance" for maintenance tasks
+   - "social" for social activities
+   - "other" for anything else
+   CRITICAL: Map pet care tasks to "personal" category
+3. For tasks with deadlines:
+   - CRITICAL: Always use the current year (${currentYear}) for all dates
    - If a task mentions "tonight" or "today" with a specific time:
-     * Use the specified time in America/New_York timezone for TODAY
+     * Use the specified time in America/New_York timezone for TODAY (${currentTimeNY.split(',')[0]})
      * If the time has already passed today, use tomorrow at the same time
      * If the time hasn't passed today, use today at that time
    - If a task mentions "tomorrow", use TOMORROW (next day) with the specified time in America/New_York timezone
@@ -187,10 +248,9 @@ Please respond with a JSON object containing a "tasks" array. For each task:
    - For tasks with "before X time", use that time as the deadline in America/New_York timezone
    - For tasks with "by X time", use that time as the deadline in America/New_York timezone
    - For reservations, use the reservation deadline (not the event time) as "scheduledEnd"
-   - CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates
-3. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
-4. Include a "startByAlert" field with a friendly message (e.g., "⏰ Start by 9:00 AM tomorrow to finish on time!")
-5. For workback schedules:
+4. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
+5. Include a "startByAlert" field with a friendly message (e.g., "⏰ Start by 9:00 AM tomorrow to finish on time!")
+6. For workback schedules:
    - ALWAYS include a "workback" array for tasks that:
      * Have a deadline more than 24 hours away
      * Require multiple steps or preparation
@@ -216,7 +276,7 @@ Please respond with a JSON object containing a "tasks" array. For each task:
        - Total workback time should equal the main task's estimatedTime
      * Each workback item should be spaced at least 15 minutes apart
      * The first workback item should start at least 30 minutes before the last workback item
-     * CRITICAL: All workback times must use the current year (${new Date().getFullYear()})
+     * CRITICAL: All workback times must use the current year (${currentYear})
 
 Important rules:
 1. All times must be in America/New_York timezone (-04:00)
@@ -226,7 +286,7 @@ Important rules:
      * If the time hasn't passed today in NY timezone, use today at that time
    - "tomorrow" means TOMORROW (next day) with the specified time in NY timezone
    - If no specific time is mentioned, use end of day (11:59 PM) in NY timezone
-   - CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates
+   - CRITICAL: Always use the current year (${currentYear}) for all dates
 3. Always estimate task duration in minutes, rounded to nearest 5 minutes
 4. For time-sensitive tasks:
    - Calculate startBy = scheduledEnd - estimatedTime
@@ -262,7 +322,7 @@ Example response for a task with "tomorrow" deadline:
   ]
 }
 
-Focus on extracting actionable tasks with realistic time estimates (rounded to 5 minutes) and appropriate workback schedules. If the input mentions specific times, use them; otherwise, make reasonable estimates based on typical task complexity. CRITICAL: Always use the current year (${new Date().getFullYear()}) for all dates.
+Focus on extracting actionable tasks with realistic time estimates (rounded to 5 minutes) and appropriate workback schedules. If the input mentions specific times, use them; otherwise, make reasonable estimates based on typical task complexity. CRITICAL: Always use the current year (${currentYear}) for all dates.
       `;
 
       const completion = await client.chat.completions.create({
