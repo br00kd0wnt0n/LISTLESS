@@ -4,12 +4,12 @@ import { TaskInput } from '@/components/TaskInput';
 import { TaskList } from '@/components/TaskList';
 import { UserSelector } from '@/components/UserSelector';
 import { UserProvider } from '@/contexts/UserContext';
-import { useTasks } from '@/hooks/useTasks';
+import { useTaskManager } from '@/hooks/useTaskManager';
 import { useUser } from '@/contexts/UserContext';
 
 function TaskApp() {
   const { selectedUser } = useUser();
-  const tasksState = useTasks(selectedUser);
+  const taskManager = useTaskManager(selectedUser);
 
   return (
     <main className="min-h-screen bg-gray-50 py-8">
@@ -20,10 +20,10 @@ function TaskApp() {
         
         <UserSelector />
         
-        <TaskInput tasksState={tasksState} />
+        <TaskInput taskManager={taskManager} />
         
         <div className="mt-8">
-          <TaskList tasksState={tasksState} />
+          <TaskList taskManager={taskManager} />
         </div>
       </div>
     </main>

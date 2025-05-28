@@ -5,8 +5,7 @@ import connectDatabase from './database/connection';
 import mongoose from 'mongoose';
 
 // Import routes
-import taskRoutes from './routes/tasks';
-import aiRoutes from './routes/ai';
+import apiRoutes from './routes/api';
 
 // Load environment variables
 dotenv.config();
@@ -63,8 +62,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api/tasks', taskRoutes);
-app.use('/api/ai', aiRoutes);
+app.use('/api', apiRoutes);
 
 // Error handling with more details
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

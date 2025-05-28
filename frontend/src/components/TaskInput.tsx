@@ -1,22 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { useAI } from '@/hooks/useAI';
-import { Task } from '@/lib/api';
+import { TaskManager } from '@/hooks/useTaskManager';
 import { useUser } from '@/contexts/UserContext';
 
 interface TaskInputProps {
-  tasksState: {
-    createTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<Task>;
-    fetchTasks: () => Promise<void>;
-  };
+  taskManager: TaskManager;
 }
 
-export function TaskInput({ tasksState }: TaskInputProps) {
+export function TaskInput({ taskManager }: TaskInputProps) {
   const [input, setInput] = useState('');
-  const { processTaskInput, processing, error: aiError } = useAI();
   const [error, setError] = useState<string | null>(null);
   const { selectedUser } = useUser();
+  const { processTaskInput, processing, error: aiError, createTask, fetchTasks } = taskManager;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,7 +22,7 @@ export function TaskInput({ tasksState }: TaskInputProps) {
       setError(null);
       
       // Process the input with AI using the selected user
-      const processedTasks = await processTaskInput(input.trim(), selectedUser);
+      const processedTasks = await processTaskInput(input.trim());
       console.log('AI processed tasks:', processedTasks);
       
       // Create each task in the backend
@@ -34,7 +30,7 @@ export function TaskInput({ tasksState }: TaskInputProps) {
         try {
           // Strip out _id field if it exists
           const { _id, ...taskWithoutId } = task;
-          await tasksState.createTask(taskWithoutId);
+          await createTask(taskWithoutId);
         } catch (taskError) {
           console.error('Failed to create task:', taskError);
           // Add the task title to the error message for context
@@ -48,7 +44,7 @@ export function TaskInput({ tasksState }: TaskInputProps) {
       
       // Only fetch tasks and clear input if all tasks were created successfully
       if (!error) {
-        await tasksState.fetchTasks();
+        await fetchTasks();
         setInput('');
       }
       

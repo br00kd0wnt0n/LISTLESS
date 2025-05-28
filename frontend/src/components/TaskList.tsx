@@ -1,21 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Task, api } from '@/lib/api';
+import { Task } from '@/lib/api';
+import { TaskManager } from '@/hooks/useTaskManager';
 import { ConfirmModal } from './ConfirmModal';
 import { DurationSelector } from './DurationSelector';
 
 interface TaskListProps {
-  tasksState: {
-    tasks: Task[];
-    loading: boolean;
-    error: string | null;
-    fetchTasks: () => Promise<void>;
-    createTask: (task: Omit<Task, '_id' | 'createdAt' | 'updatedAt'>) => Promise<Task>;
-    updateTask: (id: string, updates: Partial<Task>) => Promise<Task>;
-    deleteTask: (id: string) => Promise<void>;
-    completeTask: (id: string, actualTime: number) => Promise<Task>;
-  };
+  taskManager: TaskManager;
 }
 
 function formatDate(inputDateString: string): string {
@@ -76,8 +68,8 @@ function formatDate(inputDateString: string): string {
   return hasSpecificTime ? `${formattedDate} at ${timeString}` : formattedDate;
 }
 
-export function TaskList({ tasksState }: TaskListProps) {
-  const { tasks, loading, error, completeTask, deleteTask, fetchTasks, updateTask } = tasksState;
+export function TaskList({ taskManager }: TaskListProps) {
+  const { tasks, loading, error, completeTask, deleteTask, fetchTasks, updateTask } = taskManager;
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingDuration, setEditingDuration] = useState<number | null>(null);
@@ -126,15 +118,12 @@ export function TaskList({ tasksState }: TaskListProps) {
 
   const handleDurationChange = async (taskId: string, newDuration: number) => {
     try {
-      // Use the updateTask function from tasksState
       await updateTask(taskId, { estimatedTime: newDuration });
       setEditingTaskId(null);
       setEditingDuration(null);
-      // Refresh the task list to ensure we have the latest data
       await fetchTasks();
     } catch (error) {
       console.error('Failed to update task duration:', error);
-      // Show a more specific error message
       const errorMessage = error instanceof Error ? error.message : 'Failed to update task duration';
       alert(`Failed to update task duration: ${errorMessage}`);
     }
