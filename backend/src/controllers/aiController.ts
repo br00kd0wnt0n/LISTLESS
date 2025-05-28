@@ -11,6 +11,8 @@ interface AITaskResponse {
     priority: ITask['priority'];
     estimatedTime: number;
     tags?: string[];
+    scheduledEnd?: string;
+    workback?: Array<{ title: string; scheduledEnd: string; }>;
   }>;
   clarifications?: string[];
 }
@@ -30,6 +32,14 @@ function getOpenAIClient() {
   return openai;
 }
 
+// Add this helper function after the getOpenAIClient function
+function getRelativeDate(daysFromNow: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(23, 59, 59, 999); // Set to end of day
+  return date.toISOString();
+}
+
 export class AIController {
   // Process natural language input into tasks
   async processTaskInput(req: Request, res: Response) {
@@ -47,23 +57,61 @@ export class AIController {
       // Get OpenAI client (will throw if API key is not configured)
       const client = getOpenAIClient();
 
-      // Create prompt for OpenAI
+      // Create prompt for OpenAI with current date context
+      const currentDate = new Date().toISOString();
       const prompt = `
 Extract task information from this natural language input: "${input}"
 
-Please respond with a JSON object containing a "tasks" array (and an optional "clarifications" array). For example:
+Current date and time: ${currentDate}
+
+Please respond with a JSON object containing a "tasks" array (and an optional "clarifications" array). For each task, if a deadline (or due date) is mentioned (or can be inferred), include a "scheduledEnd" field (in ISO 8601 format). If a workback plan is needed (e.g. "finish project by Friday" → break down subtasks with deadlines), include a "workback" array (each subtask with a "title" and "scheduledEnd").
+
+Important date handling rules:
+1. Use relative dates based on the current date (${currentDate})
+2. For "today", use end of current day
+3. For "tomorrow", use end of next day
+4. For "this week", use end of current week (Sunday)
+5. For "next week", use end of next week
+6. For "this month", use end of current month
+7. For "next month", use end of next month
+8. For specific days (e.g., "Friday"), use the next occurrence of that day
+9. For "end of month/quarter/year", use the actual end date
+10. For workback deadlines (e.g., "must be done by Thursday 6pm"), create a workback item with that deadline
+11. The main task's scheduledEnd should be the final deadline (e.g., the reservation time)
+12. Workback items should have earlier deadlines than the main task
+13. Always include specific times (e.g., "6pm") in the scheduledEnd when mentioned
+14. For reservations or time-sensitive tasks:
+    - The main task's scheduledEnd should be the actual event time (e.g., dinner at 8pm)
+    - The workback deadline should be the latest time to complete the action (e.g., make reservation by 6pm)
+    - Workback deadlines must be BEFORE the main task deadline
+15. All times should be in the local timezone (America/New_York)
+16. When a specific time is mentioned (e.g., "8pm"), use that exact time
+17. For reservation tasks:
+    - The main task deadline is when the reservation is for (e.g., Friday 8pm)
+    - The workback deadline is when the reservation must be made by (e.g., Thursday 6pm)
+    - The workback title should clearly indicate it's about making the reservation
+
+Example for a reservation task:
+Input: "Make a dinner reservation at LUPO. Reservation for 7 people on Friday at 8pm. Reservation must be made by 6pm on Thursday"
+Response:
 {
   "tasks": [
     {
-      "title": "clear, actionable task title",
-      "description": "optional detailed description",
-      "category": "work|household|personal|family|health|finance|maintenance|social",
-      "priority": "low|medium|high|urgent",
-      "estimatedTime": 30,
-      "tags": ["optional", "tags"]
+      "title": "Dinner reservation at LUPO for 7 people",
+      "description": "Reservation for 7 people on Friday at 8pm",
+      "category": "personal",
+      "priority": "high",
+      "estimatedTime": 15,
+      "tags": ["dining", "reservation"],
+      "scheduledEnd": "2024-03-22T20:00:00-04:00", // Friday 8pm ET
+      "workback": [
+        {
+          "title": "Make reservation at LUPO by deadline",
+          "scheduledEnd": "2024-03-21T18:00:00-04:00" // Thursday 6pm ET
+        }
+      ]
     }
-  ],
-  "clarifications": ["any questions if input is unclear"]
+  ]
 }
 
 Focus on extracting actionable tasks. If the input mentions time estimates, use them; otherwise, make reasonable estimates based on typical task complexity.
@@ -105,7 +153,9 @@ Focus on extracting actionable tasks. If the input mentions time estimates, use 
         createdBy: userId,
         originalInput: input,
         aiProcessed: true,
-        status: 'todo'
+        status: 'todo',
+        scheduledEnd: taskData.scheduledEnd,
+        workback: taskData.workback
       }));
 
       res.json({

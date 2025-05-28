@@ -87,12 +87,25 @@ export function TaskInput({ tasksState }: TaskInputProps) {
       </form>
       
       <div className="mt-4 text-sm text-gray-600">
-        <p>💡 <strong>Try saying:</strong></p>
-        <ul className="mt-2 space-y-1 text-gray-500">
-          <li>• "Schedule a dentist appointment and pick up dry cleaning"</li>
-          <li>• "Plan weekend meal prep and grocery shopping"</li>
-          <li>• "Organize kids' school supplies before Monday"</li>
-        </ul>
+        <div className="mb-4">
+          <p className="font-medium">💡 <strong>Try saying:</strong></p>
+          <ul className="mt-2 space-y-1 text-gray-500">
+            <li>• "Schedule a dentist appointment and pick up dry cleaning"</li>
+            <li>• "Plan weekend meal prep and grocery shopping"</li>
+            <li>• "Organize kids' school supplies before Monday"</li>
+            <li>• "Prepare for next week's presentation by Friday, including research and slides"</li>
+            <li>• "Plan the house renovation project to be completed by end of month"</li>
+          </ul>
+        </div>
+        
+        <div>
+          <p className="font-medium">💡 <strong>Pro tip:</strong> Include deadlines in your input to get AI-powered workback scheduling. For example:</p>
+          <ul className="mt-2 space-y-1 text-gray-500">
+            <li>• "Need to complete the quarterly report by Friday"</li>
+            <li>• "Plan the team building event for next month"</li>
+            <li>• "Organize the conference by end of Q2"</li>
+          </ul>
+        </div>
       </div>
     </div>
   );

@@ -14,10 +14,18 @@ export interface Task {
   status: 'todo' | 'in-progress' | 'completed' | 'cancelled' | 'deferred';
   estimatedTime: number;
   actualTime?: number;
+  scheduledStart?: Date;
+  scheduledEnd?: Date;
+  workback?: {
+    title: string;
+    scheduledEnd: Date;
+    estimatedTime: number;
+  }[];
   createdAt?: Date;
   updatedAt?: Date;
   completedAt?: Date;
   createdBy: string;
+  originalInput?: string;
 }
 
 interface ApiResponse<T> {

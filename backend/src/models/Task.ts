@@ -21,6 +21,7 @@ export interface ITask extends Document {
   tags?: string[];
   originalInput?: string; // Store the original AI input
   aiProcessed?: boolean;
+  workback?: Array<{ title: string; scheduledEnd: Date }>;
 }
 
 const TaskSchema: Schema = new Schema({
@@ -55,7 +56,13 @@ const TaskSchema: Schema = new Schema({
   isRecurring: { type: Boolean, default: false },
   tags: [{ type: String, trim: true }],
   originalInput: { type: String },
-  aiProcessed: { type: Boolean, default: false }
+  aiProcessed: { type: Boolean, default: false },
+  workback: [
+    {
+      title: { type: String, required: true },
+      scheduledEnd: { type: Date, required: true }
+    }
+  ]
 }, {
   timestamps: true
 });
