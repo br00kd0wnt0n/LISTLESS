@@ -16,7 +16,7 @@ export function useAI() {
       if (response.success && response.data?.tasks) {
         return response.data.tasks;
       } else {
-        throw new Error(response.error?.message || 'Failed to process input');
+        throw new Error(response.error || 'Failed to process input');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to process task input';
@@ -27,15 +27,15 @@ export function useAI() {
     }
   };
 
-  const estimateTime = async (taskTitle: string, category?: string, description?: string) => {
+  const estimateTime = async (task: Task) => {
     try {
       setError(null);
-      const response = await api.estimateTime(taskTitle, category, description);
+      const response = await api.estimateTime(task);
       
       if (response.success && response.data?.estimatedTime) {
         return response.data.estimatedTime;
       } else {
-        throw new Error(response.error?.message || 'Failed to estimate time');
+        throw new Error(response.error || 'Failed to estimate time');
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to estimate time';

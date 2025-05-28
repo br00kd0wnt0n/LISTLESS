@@ -1,5 +1,9 @@
 // API client for frontend
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+import { API_URL } from '@/config';
+
+if (!API_URL) {
+  throw new Error('API_URL is not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+}
 
 export interface Task {
   _id?: string;
