@@ -554,47 +554,68 @@ Focus on extracting actionable tasks with realistic time estimates, appropriate 
 
       // Update the task processing section
       const processedTasks = parsedResponse.tasks.map(taskData => {
-        if (taskData.workback && taskData.workback.length > 0) {
-          // For tasks with deadlines, use calculateWorkbackTimes
-          if (taskData.scheduledEnd && taskData.estimatedTime) {
+        // Process workback items if they exist
+        if (taskData.workback && Array.isArray(taskData.workback)) {
+          const now = getReferenceDate();
+          const nyNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          
+          // For tasks with deadlines, use the deadline to space workback items
+          if (taskData.scheduledEnd) {
             const deadline = new Date(taskData.scheduledEnd);
-            const workbackTimes = calculateWorkbackTimes(deadline, taskData.estimatedTime);
+            const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+            const totalDuration = deadlineNY.getTime() - nyNow.getTime();
             
-            taskData.estimatedTime = roundToNearest5Minutes(taskData.estimatedTime);
-            
-            taskData.workback = workbackTimes.map((item, index) => ({
-              ...taskData.workback![index],
-              scheduledEnd: item.scheduledEnd.toISOString(),
-              estimatedTime: roundToNearest5Minutes(item.estimatedTime)
-            }));
-          } else {
-            // For tasks without deadlines, ensure each workback item has a valid ISO date
-            const now = getReferenceDate();
-            const defaultSpacing = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+            // Calculate spacing between items, ensuring at least 15 minutes between steps
+            const minSpacing = 15 * 60 * 1000; // 15 minutes in milliseconds
+            const spacing = Math.max(minSpacing, Math.floor(totalDuration / (taskData.workback.length + 1)));
             
             taskData.workback = taskData.workback.map((item, index) => {
-              // If the scheduledEnd is not a valid ISO date, calculate one
-              let scheduledEnd: Date;
-              try {
-                scheduledEnd = new Date(item.scheduledEnd);
-                if (isNaN(scheduledEnd.getTime())) {
-                  throw new Error('Invalid date');
-                }
-              } catch {
-                // Calculate a date based on index
-                scheduledEnd = new Date(now.getTime() + (defaultSpacing * (index + 1)));
-                // Set to 10 AM by default
-                scheduledEnd.setHours(10, 0, 0, 0);
+              const itemEndTime = new Date(nyNow.getTime() + (spacing * (index + 1)));
+              // Ensure the item ends before the deadline
+              if (itemEndTime > deadlineNY) {
+                itemEndTime.setTime(deadlineNY.getTime() - minSpacing);
               }
-              
               return {
                 ...item,
-                scheduledEnd: scheduledEnd.toISOString(),
+                scheduledEnd: itemEndTime.toISOString(),
+                estimatedTime: roundToNearest5Minutes(item.estimatedTime || 30)
+              };
+            });
+          } else {
+            // For tasks without deadlines, space items over a week
+            const weekInMs = 7 * 24 * 60 * 60 * 1000;
+            const spacing = Math.floor(weekInMs / (taskData.workback.length + 1));
+            const startDate = new Date(nyNow);
+            startDate.setDate(startDate.getDate() + 1);
+            startDate.setHours(10, 0, 0, 0); // Start at 10 AM next day
+            
+            taskData.workback = taskData.workback.map((item, index) => {
+              const itemEndTime = new Date(startDate.getTime() + (spacing * (index + 1)));
+              return {
+                ...item,
+                scheduledEnd: itemEndTime.toISOString(),
                 estimatedTime: roundToNearest5Minutes(item.estimatedTime || 30)
               };
             });
           }
         }
+        
+        // Always assign a life domain
+        const lifeDomain = (() => {
+          // If a valid life domain is provided, use it
+          if (taskData.lifeDomain && ['purple', 'blue', 'yellow', 'green', 'orange', 'red'].includes(taskData.lifeDomain)) {
+            return taskData.lifeDomain;
+          }
+          
+          // Otherwise, assign based on category
+          const category = (taskData.category || 'other').toLowerCase();
+          if (category === 'work') return 'purple';
+          if (category === 'personal' || category === 'learning') return 'blue';
+          if (category === 'family' || category === 'social') return 'yellow';
+          if (category === 'health') return 'green';
+          if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
+          return 'orange'; // Default to life maintenance for unknown categories
+        })();
         
         return {
           ...taskData,
@@ -615,7 +636,7 @@ Focus on extracting actionable tasks with realistic time estimates, appropriate 
             emotionalTriggers: taskData.emotionalProfile.emotionalTriggers || [],
             copingStrategies: taskData.emotionalProfile.copingStrategies || []
           } : undefined,
-          lifeDomain: taskData.lifeDomain
+          lifeDomain
         };
       });
 

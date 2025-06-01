@@ -78,7 +78,18 @@ const TaskSchema: Schema = new Schema({
     scheduledEnd: { 
       type: String, 
       required: false,
-      default: null
+      validate: {
+        validator: function(value: any) {
+          if (!value) return true; // Optional field
+          try {
+            const date = new Date(value);
+            return !isNaN(date.getTime());
+          } catch {
+            return false;
+          }
+        },
+        message: 'Invalid scheduledEnd date format'
+      }
     },
     estimatedTime: { 
       type: Number, 
@@ -192,8 +203,8 @@ TaskSchema.pre('save', function(this: ITask, next) {
     const now = new Date();
     const nyNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
     
+    // For tasks with deadlines, use the deadline to space workback items
     if (this.scheduledEnd) {
-      // If task has a deadline, use it to space workback items
       const deadline = new Date(this.scheduledEnd);
       const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
       const totalDuration = deadlineNY.getTime() - nyNow.getTime();

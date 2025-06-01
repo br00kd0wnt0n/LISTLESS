@@ -124,9 +124,15 @@ export default class TaskController {
         copingStrategies: taskData.emotionalProfile.copingStrategies || []
       } : undefined;
 
-      // Assign domain based on category if not provided
-      const lifeDomain = taskData.lifeDomain || (() => {
-        const category = taskData.category.toLowerCase();
+      // Always assign a life domain based on category
+      const lifeDomain = (() => {
+        // If a valid life domain is provided, use it
+        if (taskData.lifeDomain && ['purple', 'blue', 'yellow', 'green', 'orange', 'red'].includes(taskData.lifeDomain)) {
+          return taskData.lifeDomain;
+        }
+        
+        // Otherwise, assign based on category
+        const category = (taskData.category || 'other').toLowerCase();
         if (category === 'work') return 'purple';
         if (category === 'personal' || category === 'learning') return 'blue';
         if (category === 'family' || category === 'social') return 'yellow';
@@ -135,12 +141,28 @@ export default class TaskController {
         return 'orange'; // Default to life maintenance for unknown categories
       })();
 
+      // Create task with validated data
       const task = new TaskModel({
         ...taskDataWithoutId,
         emotionalProfile,
         lifeDomain,
-        createdBy: userId
+        createdBy: userId,
+        status: taskData.status || 'todo',
+        aiProcessed: taskData.aiProcessed || false
       });
+
+      // Validate before saving
+      const validationError = task.validateSync();
+      if (validationError) {
+        console.error('Task validation failed:', validationError);
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Task validation failed',
+            details: validationError.message
+          }
+        });
+      }
 
       await task.save();
 
@@ -155,7 +177,7 @@ export default class TaskController {
       console.error('Error creating task:', error);
       res.status(500).json({
         success: false,
-        error: { 
+        error: {
           message: 'Failed to create task',
           details: error instanceof Error ? error.message : 'Unknown error'
         }
