@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { api, Task } from '@/lib/api';
-import { User } from '@/contexts/UserContext';
 
 // Define the input type for creating tasks
 type CreateTaskInput = Omit<Task, '_id' | 'createdAt' | 'updatedAt'>;
@@ -18,6 +17,7 @@ interface TaskManagerOperations {
   createTask: (task: CreateTaskInput) => Promise<Task>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<Task>;
   deleteTask: (id: string) => Promise<void>;
+  deleteAllTasks: () => Promise<void>;
   completeTask: (id: string, actualTime: number) => Promise<Task>;
   
   // AI Operations
@@ -27,7 +27,7 @@ interface TaskManagerOperations {
 
 export type TaskManager = TaskManagerState & TaskManagerOperations;
 
-export function useTaskManager(userId: User): TaskManager {
+export function useTaskManager(userId: string): TaskManager {
   // Combined state
   const [state, setState] = useState<TaskManagerState>({
     tasks: [],
@@ -121,6 +121,26 @@ export function useTaskManager(userId: User): TaskManager {
     }
   }, [userId]);
 
+  const deleteAllTasks = useCallback(async () => {
+    try {
+      setState(prev => ({ ...prev, error: null }));
+      const response = await api.deleteAllTasks(userId);
+      
+      if (response.success) {
+        setState(prev => ({
+          ...prev,
+          tasks: []
+        }));
+      } else {
+        throw new Error(response.error || 'Failed to delete all tasks');
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete all tasks';
+      setState(prev => ({ ...prev, error: errorMessage }));
+      throw err;
+    }
+  }, [userId]);
+
   const completeTask = useCallback(async (id: string, actualTime: number) => {
     try {
       setState(prev => ({ ...prev, error: null }));
@@ -185,6 +205,7 @@ export function useTaskManager(userId: User): TaskManager {
     createTask,
     updateTask,
     deleteTask,
+    deleteAllTasks,
     completeTask,
     processTaskInput,
     estimateTime

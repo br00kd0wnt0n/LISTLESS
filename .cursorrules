@@ -1,0 +1,157 @@
+# .cursorrules - Listless Emotional Intelligence Implementation
+
+## Project Context
+This is Listless, an AI-powered life management app. We are implementing Phase 1: Emotional Intelligence Layer to transform it from a basic task manager into an emotionally supportive AI companion.
+
+## Current Working State
+- ✅ Backend: Consolidated Express/MongoDB API working perfectly
+- ✅ Frontend: Next.js with task creation and display working
+- ✅ AI Integration: OpenAI task processing functional
+- ✅ Core CRUD: Create, read, update, delete tasks operational
+
+## Implementation Phase: Emotional Intelligence Layer
+
+### CRITICAL: Safe Implementation Protocol
+1. **NEVER modify working code without backup consideration**
+2. **EXTEND existing schemas/interfaces, don't replace**
+3. **ADD new fields as optional to prevent breaking changes**
+4. **Test each change incrementally**
+5. **Maintain backward compatibility with existing task data**
+
+### Implementation Order (STRICT SEQUENCE)
+1. **Backend Schema Extension** - Add optional emotional fields to Task model
+2. **Database Migration Safety** - Ensure existing tasks still work
+3. **AI Prompt Enhancement** - Extend OpenAI processing for emotional analysis
+4. **Frontend Type Updates** - Add TypeScript interfaces for new fields
+5. **UI Component Updates** - Enhance TaskCard with emotional indicators
+6. **Testing Validation** - Verify all existing functionality + new features
+
+### Code Standards for This Phase
+
+#### TypeScript Requirements
+- All new fields must be optional with proper defaults
+- Extend existing interfaces, don't replace them
+- Use proper type guards for new fields
+- Maintain strict typing for emotional profiles
+
+#### Backend Changes
+- Use Mongoose schema.add() for non-breaking changes
+- Provide sensible defaults for all new fields
+- Ensure backwards compatibility with existing task data
+- Add proper validation for emotional profile fields
+
+#### Frontend Changes
+- Use optional chaining for new fields (task.emotionalProfile?.stressLevel)
+- Provide fallback displays for tasks without emotional data
+- Maintain existing UI while enhancing with new features
+- Use progressive enhancement approach
+
+#### Error Handling
+- Graceful degradation if emotional analysis fails
+- Fallback to original task creation if AI enhancement errors
+- User-friendly error messages for any failures
+- Maintain core functionality even if emotional features break
+
+### Specific Implementation Guidelines
+
+#### When Extending Task Schema:
+```typescript
+// ✅ CORRECT - Add as optional fields
+interface ITask {
+  // ... existing required fields ...
+  emotionalProfile?: {
+    stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+    // ... other optional emotional fields
+  };
+  lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
+}
+
+// ❌ WRONG - Don't make new fields required immediately
+interface ITask {
+  emotionalProfile: { // This would break existing tasks
+    stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+  };
+}
+```
+
+#### When Updating Components:
+```typescript
+// ✅ CORRECT - Safe checking of new fields
+const emotional = task.emotionalProfile;
+if (emotional?.stressLevel) {
+  // Render emotional indicators
+}
+
+// ❌ WRONG - Assuming fields exist
+const stressIcon = EMOTIONAL_INDICATORS[task.emotionalProfile.stressLevel]; // Could crash
+```
+
+#### When Enhancing AI Processing:
+- Keep original task creation as fallback
+- Add emotional analysis as enhancement layer
+- If emotional analysis fails, still create basic task
+- Log issues but don't break user experience
+
+### Testing Requirements
+After each implementation step:
+1. **Verify existing functionality works unchanged**
+2. **Test new emotional features work as expected**
+3. **Confirm backwards compatibility with old task data**
+4. **Validate all API endpoints still respond correctly**
+5. **Check frontend renders both old and new task formats**
+
+### Success Criteria for Phase 1
+- ✅ All existing tasks continue to work perfectly
+- ✅ New tasks get emotional intelligence analysis
+- ✅ TaskCard component shows emotional indicators for new tasks
+- ✅ TaskCard component renders old tasks without errors
+- ✅ AI creates emotionally-aware tasks with life domain colors
+- ✅ No breaking changes to existing functionality
+
+### Red Flags - Stop Implementation If:
+- Existing tasks stop displaying correctly
+- Task creation breaks for any reason
+- API endpoints return errors for previously working requests
+- Database queries fail for existing data
+- Frontend crashes on existing task data
+
+### Communication Style
+- Explain each change before implementing
+- Show the specific code changes needed
+- Highlight potential risks and mitigation strategies
+- Provide testing steps for validation
+- Ask for confirmation before making breaking changes
+
+## File Structure Context
+```
+backend/src/
+├── models/Task.ts           # EXTEND this with emotional fields
+├── controllers/main.ts      # ENHANCE AI processing here
+└── routes/api.ts           # Routes should remain unchanged
+
+frontend/src/
+├── types/Task.ts           # ADD emotional interfaces here
+├── components/TaskCard.tsx  # ENHANCE with emotional display
+└── components/TaskList.tsx  # May need minor updates
+```
+
+## Current Task Model (Do Not Break)
+```typescript
+interface ITask {
+  title: string;
+  description: string;
+  category: string;
+  priority: string;
+  status: string;
+  estimatedTime: number;
+  scheduledEnd: Date;
+  startBy: Date;
+  workback: Array<object>;
+  tags: string[];
+  createdBy: string;
+  aiProcessed: boolean;
+  // ... other existing fields
+}
+```
+
+Remember: We're enhancing an existing working system, not rebuilding it. Every change should make the app better while keeping everything that currently works intact.

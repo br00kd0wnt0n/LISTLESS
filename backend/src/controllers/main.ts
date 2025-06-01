@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import mongoose from 'mongoose';
+import mongoose, { SortOrder } from 'mongoose';
 import OpenAI from 'openai';
 import TaskModel, { ITask } from '../models/Task';
 import { validationResult } from 'express-validator';
@@ -28,6 +28,15 @@ interface AITaskResponse {
     }>;
     startBy?: string;
     startByAlert?: string;
+    emotionalProfile?: {
+      stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+      emotionalImpact: 'positive' | 'neutral' | 'negative';
+      energyLevel: 'low' | 'medium' | 'high';
+      motivationLevel: 'low' | 'medium' | 'high';
+      emotionalTriggers?: string[];
+      copingStrategies?: string[];
+    };
+    lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
   }>;
   clarifications?: string[];
 }
@@ -36,6 +45,35 @@ interface WorkbackTime {
   scheduledEnd: Date;
   estimatedTime: number;
   title: string;
+}
+
+// Update ProcessedTaskData interface to match ITask requirements
+interface ProcessedTaskData {
+  title: string;
+  description?: string;
+  category: ITask['category'];
+  priority: ITask['priority'];
+  estimatedTime: number;
+  scheduledEnd?: string;
+  workback?: Array<{
+    title: string;
+    scheduledEnd: string; // Required to match ITask
+    estimatedTime: number; // Required to match ITask
+  }>;
+  emotionalProfile?: {
+    stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+    emotionalImpact: 'positive' | 'neutral' | 'negative';
+    energyLevel: 'low' | 'medium' | 'high';
+    motivationLevel: 'low' | 'medium' | 'high';
+    emotionalTriggers?: string[];
+    copingStrategies?: string[];
+  };
+  lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
+}
+
+// Add type for MongoDB error
+interface MongoError extends Error {
+  code?: number;
 }
 
 // Helper Functions
@@ -86,79 +124,52 @@ function roundToNearest5Minutes(minutes: number): number {
 function calculateWorkbackTimes(deadline: Date, totalDuration: number): WorkbackTime[] {
   const workbackItems: WorkbackTime[] = [];
   
+  // Convert deadline to NY timezone for consistent calculations
   const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const nowNY = getReferenceDate();
+  const nowNY = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
   
+  // Calculate hours until deadline in NY timezone
   const hoursUntilDeadline = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60 * 60);
   
+  // Helper function to create NY timezone date string
   const createNYDateString = (date: Date) => {
     const nyDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const year = nyDate.getFullYear();
-    const month = String(nyDate.getMonth() + 1).padStart(2, '0');
-    const day = String(nyDate.getDate()).padStart(2, '0');
-    const hours = String(nyDate.getHours()).padStart(2, '0');
-    const minutes = String(nyDate.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
+    return nyDate.toISOString();
   };
   
-  let firstItemDuration, secondItemDuration;
+  // Calculate number of workback items based on task duration and deadline
+  const numSteps = Math.min(3, Math.max(2, Math.ceil(totalDuration / 120))); // One step per 2 hours, max 3 steps
+  const stepDurations = Array(numSteps).fill(0).map((_, i) => {
+    const baseDuration = Math.round(totalDuration / numSteps);
+    return i === numSteps - 1 ? baseDuration + (totalDuration % numSteps) : baseDuration;
+  });
   
-  if (hoursUntilDeadline <= 2) {
-    firstItemDuration = Math.floor(totalDuration * 0.25);
-    secondItemDuration = Math.floor(totalDuration * 0.75);
-  } else if (hoursUntilDeadline <= 4) {
-    firstItemDuration = Math.floor(totalDuration * 0.3);
-    secondItemDuration = Math.floor(totalDuration * 0.7);
-  } else {
-    firstItemDuration = Math.floor(totalDuration * 0.4);
-    secondItemDuration = Math.floor(totalDuration * 0.6);
-  }
-  
-  firstItemDuration = Math.max(15, Math.round(firstItemDuration / 5) * 5);
-  secondItemDuration = Math.max(15, Math.round(secondItemDuration / 5) * 5);
-  
+  // Add buffer time between steps
   const bufferMinutes = 15;
+  const totalBufferTime = bufferMinutes * (numSteps - 1);
+  const adjustedTotalDuration = totalDuration - totalBufferTime;
   
-  const secondItemEnd = new Date(deadlineNY);
-  const secondItemStart = new Date(secondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
-  const firstItemEnd = new Date(secondItemStart.getTime() - (bufferMinutes * 60 * 1000));
-  const firstItemStart = new Date(firstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
+  // Calculate step durations with buffer time
+  const adjustedStepDurations = stepDurations.map((duration, i) => {
+    const adjustedDuration = Math.round((duration / totalDuration) * adjustedTotalDuration);
+    return Math.max(15, adjustedDuration); // Minimum 15 minutes per step
+  });
   
-  if (firstItemEnd <= firstItemStart || secondItemEnd <= secondItemStart || firstItemEnd >= secondItemStart) {
-    const totalAvailableMinutes = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60);
-    const adjustedTotalDuration = Math.min(totalDuration, totalAvailableMinutes - bufferMinutes);
+  // Calculate end times for each step, working backwards from deadline
+  let currentEnd = new Date(deadlineNY);
+  for (let i = numSteps - 1; i >= 0; i--) {
+    const stepStart = new Date(currentEnd.getTime() - (adjustedStepDurations[i] * 60 * 1000));
     
-    firstItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.4) / 5) * 5);
-    secondItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.6) / 5) * 5);
-    
-    const newSecondItemEnd = new Date(deadlineNY);
-    const newSecondItemStart = new Date(newSecondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
-    const newFirstItemEnd = new Date(newSecondItemStart.getTime() - (bufferMinutes * 60 * 1000));
-    const newFirstItemStart = new Date(newFirstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
-    
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(newFirstItemEnd)),
-      estimatedTime: firstItemDuration,
-      title: 'Step 1: Initial preparation'
+    workbackItems.unshift({
+      scheduledEnd: new Date(createNYDateString(currentEnd)),
+      estimatedTime: adjustedStepDurations[i],
+      title: `Step ${i + 1}: ${i === 0 ? 'Initial preparation' : i === numSteps - 1 ? 'Final completion' : 'Progress check'}`
     });
     
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(newSecondItemEnd)),
-      estimatedTime: secondItemDuration,
-      title: 'Step 2: Final completion'
-    });
-  } else {
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(firstItemEnd)),
-      estimatedTime: firstItemDuration,
-      title: 'Step 1: Initial preparation'
-    });
-    
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(secondItemEnd)),
-      estimatedTime: secondItemDuration,
-      title: 'Step 2: Final completion'
-    });
+    // Add buffer time before next step
+    if (i > 0) {
+      currentEnd = new Date(stepStart.getTime() - (bufferMinutes * 60 * 1000));
+    }
   }
   
   return workbackItems;
@@ -179,6 +190,105 @@ function getOpenAIClient() {
   return openai;
 }
 
+// Add caching for duplicate task detection
+const duplicateTaskCache = new Map<string, { task: ITask; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// Helper function to check cache for duplicates
+function checkDuplicateCache(userId: string, taskTitle: string): ITask | null {
+  const cacheKey = `${userId}:${taskTitle}`;
+  const cached = duplicateTaskCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.task;
+  }
+  
+  duplicateTaskCache.delete(cacheKey);
+  return null;
+}
+
+// Helper function to update duplicate cache
+function updateDuplicateCache(userId: string, taskTitle: string, task: ITask) {
+  const cacheKey = `${userId}:${taskTitle}`;
+  duplicateTaskCache.set(cacheKey, { task, timestamp: Date.now() });
+}
+
+// Add helper function to check for duplicate tasks
+async function findDuplicateTasks(userId: string, taskTitle: string): Promise<ITask | null> {
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+  return TaskModel.findOne({
+    createdBy: userId,
+    title: taskTitle,
+    status: { $in: ['todo', 'in-progress'] },
+    createdAt: { $gte: fiveMinutesAgo }
+  }).sort({ createdAt: -1 });
+}
+
+// Add helper function to process AI response
+function processAIResponse(response: string, userId: string, input: string): AITaskResponse {
+  try {
+    const parsedResponse = JSON.parse(response);
+    if (!parsedResponse.tasks || !Array.isArray(parsedResponse.tasks)) {
+      throw new Error('Invalid AI response format: missing tasks array');
+    }
+    return parsedResponse;
+  } catch (error) {
+    console.error('Failed to parse AI response:', error);
+    throw new Error('Invalid AI response format');
+  }
+}
+
+// Optimize workback item processing
+function processWorkbackItems(taskData: ProcessedTaskData, deadline?: Date): ProcessedTaskData {
+  if (!taskData.workback || !Array.isArray(taskData.workback)) {
+    return taskData;
+  }
+
+  const now = new Date();
+  const nyNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  
+  if (deadline && taskData.estimatedTime) {
+    // For tasks with deadlines, calculate workback items based on deadline
+    const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const totalDuration = deadlineNY.getTime() - nyNow.getTime();
+    const minSpacing = 15 * 60 * 1000; // 15 minutes in milliseconds
+    
+    // Calculate optimal number of steps based on total duration
+    const numSteps = Math.min(3, Math.max(2, Math.ceil(taskData.estimatedTime / 120)));
+    const spacing = Math.max(minSpacing, Math.floor(totalDuration / (numSteps + 1)));
+    
+    taskData.workback = taskData.workback.slice(0, numSteps).map((item, index) => {
+      const itemEndTime = new Date(nyNow.getTime() + (spacing * (index + 1)));
+      if (itemEndTime > deadlineNY) {
+        itemEndTime.setTime(deadlineNY.getTime() - minSpacing);
+      }
+      return {
+        title: item.title,
+        scheduledEnd: itemEndTime.toISOString(),
+        estimatedTime: Math.max(15, Math.round((item.estimatedTime || taskData.estimatedTime / numSteps) / 5) * 5)
+      };
+    });
+  } else {
+    // For tasks without deadlines, space items over a week
+    const weekInMs = 7 * 24 * 60 * 60 * 1000;
+    const startDate = new Date(nyNow);
+    startDate.setDate(startDate.getDate() + 1);
+    startDate.setHours(10, 0, 0, 0); // Start at 10 AM next day
+    
+    const spacing = Math.floor(weekInMs / (taskData.workback.length + 1));
+    taskData.workback = taskData.workback.map((item, index) => {
+      const itemEndTime = new Date(startDate.getTime() + (spacing * (index + 1)));
+      return {
+        title: item.title,
+        scheduledEnd: itemEndTime.toISOString(),
+        estimatedTime: Math.max(15, Math.round((item.estimatedTime || 30) / 5) * 5)
+      };
+    });
+  }
+  
+  return taskData;
+}
+
 // Main Controller Class
 export class TaskController {
   constructor() {
@@ -197,22 +307,29 @@ export class TaskController {
     try {
       const userId = req.query.userId as string;
       if (!userId) {
-        return res.status(400).json({ message: 'User ID is required' });
+        return res.status(400).json({ 
+          success: false,
+          error: { message: 'User ID is required' }
+        });
       }
 
+      // First get tasks with scheduledEnd dates
       const tasksWithDeadlines = await TaskModel.find({ 
         createdBy: userId,
         scheduledEnd: { $exists: true, $ne: null }
       }).sort({ scheduledEnd: 1 });
 
+      // Then get tasks without scheduledEnd dates
       const tasksWithoutDeadlines = await TaskModel.find({ 
         createdBy: userId,
         scheduledEnd: { $exists: false }
       }).sort({ createdAt: -1 });
 
+      // Combine the results
       const tasks = [...tasksWithDeadlines, ...tasksWithoutDeadlines];
 
-      res.setHeader('Cache-Control', 'no-store');
+      // Set cache headers
+      res.setHeader('Cache-Control', 'private, max-age=30'); // Cache for 30 seconds
 
       res.json({
         success: true,
@@ -224,69 +341,202 @@ export class TaskController {
       });
     } catch (error) {
       console.error('Error fetching tasks:', error);
+      
+      // Enhanced error handling
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch tasks';
+      const errorDetails = error instanceof Error ? error.stack : undefined;
+      
       res.status(500).json({
         success: false,
-        error: { message: 'Failed to fetch tasks' }
+        error: { 
+          message: errorMessage,
+          details: process.env.NODE_ENV === 'development' ? errorDetails : undefined
+        }
       });
     }
   }
 
   async createTask(req: Request, res: Response) {
     try {
-      console.log('Task creation request body:', JSON.stringify(req.body, null, 2));
-      console.log('Task creation query params:', JSON.stringify(req.query, null, 2));
-      
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        console.error('Task validation errors:', {
-          errors: errors.array(),
-          requestBody: req.body,
-          validationRules: {
-            title: { required: true, minLength: 1, maxLength: 200 },
-            category: { required: true, validValues: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social', 'other'] },
-            priority: { required: true, validValues: ['low', 'medium', 'high', 'urgent'] },
-            estimatedTime: { required: true, type: 'number', min: 1 }
+      const userId = req.query.userId as string;
+      if (!userId) {
+        return res.status(400).json({ 
+          success: false,
+          error: { message: 'User ID is required' }
+        });
+      }
+
+      let taskData = req.body;
+
+      // Validate required fields
+      const requiredFields = ['title', 'category', 'priority', 'estimatedTime'];
+      const missingFields = requiredFields.filter(field => !taskData[field]);
+      if (missingFields.length > 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Missing required fields',
+            details: missingFields.map(field => `${field} is required`)
           }
         });
+      }
+
+      // Validate field types and values
+      const validationErrors: string[] = [];
+      
+      if (typeof taskData.title !== 'string' || taskData.title.length > 200) {
+        validationErrors.push('Title must be a string with maximum length of 200 characters');
+      }
+      
+      if (!['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social', 'other'].includes(taskData.category)) {
+        validationErrors.push('Invalid category value');
+      }
+      
+      if (!['low', 'medium', 'high', 'urgent'].includes(taskData.priority)) {
+        validationErrors.push('Invalid priority value');
+      }
+      
+      if (typeof taskData.estimatedTime !== 'number' || taskData.estimatedTime < 1) {
+        validationErrors.push('Estimated time must be a positive number');
+      }
+
+      if (validationErrors.length > 0) {
         return res.status(400).json({
           success: false,
           error: {
             message: 'Validation failed',
-            details: errors.array()
+            details: validationErrors
           }
         });
       }
 
-      const userId = req.query.userId as string;
-      if (!userId) {
-        console.error('Missing userId in query params');
-        return res.status(400).json({ message: 'User ID is required' });
+      // Check cache for duplicates first
+      const cachedTask = checkDuplicateCache(userId, taskData.title);
+      if (cachedTask) {
+        return res.status(200).json({
+          success: true,
+          data: cachedTask,
+          meta: {
+            timestamp: new Date().toISOString(),
+            note: 'Duplicate task detected from cache'
+          }
+        });
       }
 
-      const taskData = req.body;
-      const { _id, ...taskDataWithoutId } = taskData;
-      
+      // Check database for duplicates using a more efficient query
+      const existingTask = await TaskModel.findOne({
+        createdBy: userId,
+        title: taskData.title,
+        status: { $in: ['todo', 'in-progress'] },
+        createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+      }).select('_id title status createdAt').lean();
+
+      if (existingTask) {
+        updateDuplicateCache(userId, taskData.title, existingTask);
+        return res.status(200).json({
+          success: true,
+          data: existingTask,
+          meta: {
+            timestamp: new Date().toISOString(),
+            note: 'Duplicate task detected from database'
+          }
+        });
+      }
+
+      // Process workback items if they exist
+      if (taskData.workback && Array.isArray(taskData.workback)) {
+        const deadline = taskData.scheduledEnd ? new Date(taskData.scheduledEnd) : undefined;
+        taskData = processWorkbackItems(taskData, deadline);
+      }
+
+      // Create new task with proper defaults
       const task = new TaskModel({
-        ...taskDataWithoutId,
-        createdBy: userId
+        ...taskData,
+        createdBy: userId,
+        status: 'todo',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        aiProcessed: false,
+        emotionalProfile: taskData.emotionalProfile || undefined,
+        lifeDomain: taskData.lifeDomain || undefined
       });
 
-      await task.save();
+      // Validate before saving using Mongoose validation
+      const validationError = task.validateSync();
+      if (validationError) {
+        const errorDetails = Object.values(validationError.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+        
+        return res.status(400).json({
+          success: false,
+          error: {
+            message: 'Task validation failed',
+            details: errorDetails
+          }
+        });
+      }
+
+      // Save task with retry logic for concurrent operations
+      let savedTask;
+      try {
+        savedTask = await task.save();
+      } catch (saveError: unknown) {
+        const mongoError = saveError as MongoError;
+        if (mongoError.code === 11000) { // Duplicate key error
+          // Retry with a slight delay
+          await new Promise(resolve => setTimeout(resolve, 100));
+          savedTask = await task.save();
+        } else {
+          throw saveError;
+        }
+      }
+
+      // Update cache
+      updateDuplicateCache(userId, taskData.title, savedTask);
+
+      // Set cache headers
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('ETag', `"${savedTask._id}-${savedTask.updatedAt.getTime()}"`);
 
       res.status(201).json({
         success: true,
-        data: task,
+        data: savedTask,
         meta: {
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          created: true
         }
       });
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error creating task:', error);
-      res.status(500).json({
+      
+      // Enhanced error handling with proper error classification
+      let statusCode = 500;
+      let errorMessage = 'Failed to create task';
+      let errorDetails;
+
+      if (error instanceof mongoose.Error.ValidationError) {
+        statusCode = 400;
+        errorMessage = 'Validation failed';
+        errorDetails = Object.values(error.errors).map(err => ({
+          field: err.path,
+          message: err.message
+        }));
+      } else if (error instanceof mongoose.Error.CastError) {
+        statusCode = 400;
+        errorMessage = 'Invalid data type';
+        errorDetails = { field: error.path, message: error.message };
+      } else if ((error as MongoError).code === 11000) {
+        statusCode = 409;
+        errorMessage = 'Duplicate task detected';
+      }
+
+      res.status(statusCode).json({
         success: false,
-        error: { 
-          message: 'Failed to create task',
-          details: error instanceof Error ? error.message : 'Unknown error'
+        error: {
+          message: errorMessage,
+          details: process.env.NODE_ENV === 'development' ? errorDetails : undefined
         }
       });
     }
@@ -424,6 +674,32 @@ export class TaskController {
         });
       }
 
+      // Check for duplicate tasks first
+      const existingTask = await findDuplicateTasks(userId, input);
+      if (existingTask) {
+        console.log('Duplicate task detected:', {
+          title: input,
+          existingTask: {
+            id: existingTask._id,
+            createdAt: existingTask.createdAt,
+            status: existingTask.status
+          }
+        });
+        
+        return res.status(200).json({
+          success: true,
+          data: {
+            tasks: [existingTask],
+            clarifications: [],
+            originalInput: input
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            note: 'Duplicate task detected, returning existing task'
+          }
+        });
+      }
+
       const client = getOpenAIClient();
       const currentTimeNY = getCurrentTimeInNY();
       const currentDateISO = getReferenceDate().toISOString();
@@ -436,11 +712,14 @@ Current date and time in New York: ${currentTimeNY}
 Current date and time (ISO): ${currentDateISO}
 Current year: ${currentYear}
 
+CRITICAL: Process this input independently. Do not carry over context from previous conversations.
+
 Please respond with a JSON object containing a "tasks" array. For each task:
 1. ALWAYS include an "estimatedTime" field (in minutes) based on typical task complexity:
    - Round all time estimates to the nearest 5 minutes (e.g., 15, 20, 25, 30, etc.)
    - For tasks under 15 minutes, use 15 minutes as the minimum
    - For tasks over 2 hours, round to the nearest 15 minutes
+
 2. For task categories, use ONLY these valid values:
    - "work" for work-related tasks
    - "household" for home maintenance and chores
@@ -452,6 +731,7 @@ Please respond with a JSON object containing a "tasks" array. For each task:
    - "social" for social activities
    - "other" for anything else
    CRITICAL: Map pet care tasks to "personal" category
+
 3. For tasks with deadlines:
    - CRITICAL: Always use the current year (${currentYear})
    - If a task mentions "tonight" or "today" with a specific time:
@@ -463,8 +743,11 @@ Please respond with a JSON object containing a "tasks" array. For each task:
    - For tasks with "before X time", use that time as the deadline in America/New_York timezone
    - For tasks with "by X time", use that time as the deadline in America/New_York timezone
    - For reservations, use the reservation deadline (not the event time) as "scheduledEnd"
+
 4. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
+
 5. Include a "startByAlert" field with a friendly message (e.g., "⏰ Start by 9:00 AM tomorrow to finish on time!")
+
 6. For workback schedules:
    - ALWAYS include a "workback" array for tasks that:
      * Have a deadline more than 24 hours away
@@ -476,22 +759,60 @@ Please respond with a JSON object containing a "tasks" array. For each task:
      * A scheduledEnd time (MUST be before the main task deadline)
      * An estimatedTime in minutes (rounded to nearest 5 minutes)
      * A clear sequence (e.g., "Step 1: Research", "Step 2: Draft", etc.)
-   - Workback schedule rules:
-     * For tasks due within 2 hours:
-       - First workback item should be due 25% of total time before the deadline
-       - Second workback item should be due 75% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * For tasks due within 4 hours:
-       - First workback item should be due 30% of total time before the deadline
-       - Second workback item should be due 70% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * For tasks due in more than 4 hours:
-       - First workback item should be due 40% of total time before the deadline
-       - Second workback item should be due 60% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * Each workback item should be spaced at least 15 minutes apart
-     * The first workback item should start at least 30 minutes before the last workback item
-     * CRITICAL: All workback times must use the current year (${currentYear})
+   - CRITICAL: Workback items MUST be in chronological order:
+     * Step 1 should be earlier than Step 2
+     * Each step's scheduledEnd must be before the next step
+     * All steps must be before the main task deadline
+     * For tasks with deadlines, work backwards from the deadline
+     * Example for a task due Friday at 11:59 PM:
+       {
+         "workback": [
+           {
+             "title": "Step 1: Initial preparation",
+             "scheduledEnd": "2025-05-30T15:00:00.000-04:00", // Thursday afternoon
+             "estimatedTime": 60
+           },
+           {
+             "title": "Step 2: Final completion",
+             "scheduledEnd": "2025-05-30T23:00:00.000-04:00", // Thursday evening
+             "estimatedTime": 45
+           }
+         ]
+       }
+
+7. For emotional intelligence analysis, ALWAYS include an "emotionalProfile" object with:
+   - "stressLevel": Assess the potential stress level of the task:
+     * "low" for routine, simple tasks or tasks with positive emotional context
+     * "medium" for moderately challenging tasks
+     * "high" for complex or time-sensitive tasks
+     * "overwhelming" for tasks that might cause significant stress
+   - "emotionalImpact": Evaluate how the task might affect emotions:
+     * "positive" for tasks that bring joy, satisfaction, or creative fulfillment
+     * "neutral" for routine tasks
+     * "negative" for tasks that might cause anxiety or stress
+   - "energyLevel": Estimate the energy required:
+     * "low" for simple, quick tasks
+     * "medium" for standard tasks
+     * "high" for demanding tasks or creative tasks requiring flow state
+   - "motivationLevel": Assess the likely motivation level:
+     * "low" for tasks that might be procrastinated
+     * "medium" for standard tasks
+     * "high" for engaging, creative, or rewarding tasks
+   - "emotionalTriggers": Optional array of potential emotional triggers
+   - "copingStrategies": Optional array of suggested coping strategies
+   - Consider the user's overall emotional state when provided:
+     * If user mentions mixed emotions (e.g., "overwhelmed but motivated")
+     * If user expresses excitement about certain tasks
+     * If user indicates anxiety about deadlines
+     * Adjust support strategies accordingly
+
+8. For life domain color, assign ONE of these colors based on the task's primary life area:
+   - "purple" for work and career (e.g., client presentations, work projects, professional development)
+   - "blue" for personal growth and learning (e.g., studying, skill development, personal projects)
+   - "yellow" for people and relationships (e.g., family events, social gatherings, relationship maintenance)
+   - "green" for health and wellness (e.g., medical appointments, exercise, self-care)
+   - "orange" for life maintenance (e.g., taxes, bills, administrative tasks, household management)
+   - "red" ONLY for truly urgent or critical tasks (e.g., emergencies, immediate deadlines, critical issues)
 
 Important rules:
 1. All times must be in America/New_York timezone (-04:00)
@@ -507,14 +828,62 @@ Important rules:
    - Calculate startBy = scheduledEnd - estimatedTime
    - Include a friendly startByAlert with emoji
    - For reservations, use the reservation deadline (not event time) as the main deadline
-      `;
+5. For emotional analysis:
+   - Consider the task's complexity, deadline, and personal impact
+   - Assess potential stress and emotional impact realistically
+   - Provide specific coping strategies for high-stress tasks
+   - Choose the most relevant life domain color
+
+5. For life domain classification:
+   - Use "yellow" for all relationship and social activities
+   - Use "orange" for maintenance and administrative tasks
+   - Reserve "red" ONLY for truly urgent or critical tasks
+   - Consider the task's primary purpose, not just its deadline
+   - Example: Taxes are "orange" (life maintenance) unless they have an immediate deadline
+
+Example response with correct domain classification:
+{
+  "tasks": [
+    {
+      "title": "Plan family dinner with in-laws",
+      "description": "Coordinate and plan activities for in-laws' visit",
+      "category": "family",
+      "priority": "high",
+      "estimatedTime": 60,
+      "emotionalProfile": {
+        "stressLevel": "medium",
+        "emotionalImpact": "positive",
+        "energyLevel": "medium",
+        "motivationLevel": "high",
+        "emotionalTriggers": [],
+        "copingStrategies": []
+      },
+      "lifeDomain": "yellow",  // Family activities are yellow domain
+      "workback": [
+        {
+          "title": "Step 1: Research restaurant options",
+          "scheduledEnd": "${getRelativeDate(1, 10, 0)}",
+          "estimatedTime": 30
+        },
+        {
+          "title": "Step 2: Make reservations",
+          "scheduledEnd": "${getRelativeDate(1, 14, 0)}",
+          "estimatedTime": 30
+        }
+      ]
+    }
+  ]
+}
+
+Focus on extracting actionable tasks with realistic time estimates, appropriate workback schedules, and thoughtful emotional intelligence analysis. Process each input independently and classify life domains according to the task's primary purpose.
+`;
 
       const completion = await client.chat.completions.create({
         model: 'gpt-4',
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful task management assistant. Extract clear, actionable tasks from natural language input. Always respond with valid JSON.'
+            content: 'You are a helpful task management assistant. Extract clear, actionable tasks from natural language input. Process each input independently - do not carry over context from previous conversations. Always respond with valid JSON.'
           },
           {
             role: 'user',
@@ -530,41 +899,48 @@ Important rules:
         throw new Error('No response from OpenAI');
       }
 
-      let parsedResponse: AITaskResponse;
-      try {
-        parsedResponse = JSON.parse(aiResponse);
-      } catch (parseError) {
-        console.error('Failed to parse AI response:', aiResponse);
-        throw new Error('Invalid AI response format');
-      }
+      const parsedResponse = processAIResponse(aiResponse, userId, input);
 
-      const processedTasks = parsedResponse.tasks.map(taskData => {
-        if (taskData.scheduledEnd && taskData.workback && taskData.estimatedTime) {
+      const processedTasks = await Promise.all(parsedResponse.tasks.map(async taskData => {
+        // Process workback items if needed
+        if (taskData.scheduledEnd) {
           const deadline = new Date(taskData.scheduledEnd);
-          const workbackTimes = calculateWorkbackTimes(deadline, taskData.estimatedTime);
-          
-          taskData.estimatedTime = roundToNearest5Minutes(taskData.estimatedTime);
-          
-          taskData.workback = workbackTimes.map((item, index) => ({
-            ...taskData.workback![index],
-            scheduledEnd: item.scheduledEnd.toISOString(),
-            estimatedTime: roundToNearest5Minutes(item.estimatedTime)
-          }));
+          taskData = processWorkbackItems(taskData, deadline);
+        } else {
+          taskData = processWorkbackItems(taskData);
         }
         
-        return {
+        // Ensure emotional profile is properly structured
+        const emotionalProfile = taskData.emotionalProfile ? {
+          stressLevel: taskData.emotionalProfile.stressLevel,
+          emotionalImpact: taskData.emotionalProfile.emotionalImpact,
+          energyLevel: taskData.emotionalProfile.energyLevel,
+          motivationLevel: taskData.emotionalProfile.motivationLevel,
+          emotionalTriggers: taskData.emotionalProfile.emotionalTriggers || [],
+          copingStrategies: taskData.emotionalProfile.copingStrategies || []
+        } : undefined;
+
+        // Create the task
+        const task = new TaskModel({
           ...taskData,
           createdBy: userId,
           originalInput: input,
           aiProcessed: true,
           status: 'todo',
-          scheduledEnd: taskData.scheduledEnd,
-          startBy: taskData.startBy,
-          startByAlert: taskData.startByAlert,
-          workback: taskData.workback,
+          emotionalProfile,
           estimatedTime: roundToNearest5Minutes(taskData.estimatedTime || 30)
-        };
-      });
+        });
+
+        // Validate before saving
+        const validationError = task.validateSync();
+        if (validationError) {
+          console.error('Task validation failed:', validationError);
+          throw new Error(`Task validation failed: ${validationError.message}`);
+        }
+
+        await task.save();
+        return task;
+      }));
 
       res.json({
         success: true,
@@ -581,6 +957,41 @@ Important rules:
 
     } catch (error) {
       console.error('Error processing AI task input:', error);
+      
+      // Handle specific error types
+      if (error instanceof Error) {
+        if (error.message.includes('Task validation failed')) {
+          return res.status(400).json({
+            success: false,
+            error: {
+              message: 'Task validation failed',
+              details: error.message
+            }
+          });
+        }
+        
+        if (error.message.includes('Invalid AI response format')) {
+          return res.status(500).json({
+            success: false,
+            error: {
+              message: 'AI response format error',
+              details: error.message
+            }
+          });
+        }
+        
+        if (error.message.includes('No response from OpenAI')) {
+          return res.status(503).json({
+            success: false,
+            error: {
+              message: 'AI service unavailable',
+              details: 'OpenAI did not return a valid response'
+            }
+          });
+        }
+      }
+      
+      // Generic error response
       res.status(500).json({
         success: false,
         error: {
@@ -591,15 +1002,21 @@ Important rules:
     }
   }
 
-  async estimateTime(req: Request, res: Response) {
+  // Update estimateTime method with proper types
+  async estimateTime(req: Request, res: Response): Promise<void> {
     try {
-      const { taskTitle, category, description } = req.body;
+      const { taskTitle, category, description } = req.body as {
+        taskTitle: string;
+        category?: string;
+        description?: string;
+      };
 
       if (!taskTitle) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           error: { message: 'Task title is required' }
         });
+        return;
       }
 
       const prompt = `

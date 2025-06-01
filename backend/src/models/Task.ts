@@ -27,6 +27,16 @@ export interface ITask extends Document {
     scheduledEnd: string;
     estimatedTime?: number;
   }>;
+  emotionalProfile?: {
+    stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+    emotionalImpact: 'positive' | 'neutral' | 'negative';
+    energyLevel: 'low' | 'medium' | 'high';
+    motivationLevel: 'low' | 'medium' | 'high';
+    emotionalTriggers?: string[];
+    copingStrategies?: string[];
+    lastEmotionalCheck?: Date;
+  };
+  lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
 }
 
 const TaskSchema: Schema = new Schema({
@@ -63,20 +73,167 @@ const TaskSchema: Schema = new Schema({
   tags: [{ type: String, trim: true }],
   originalInput: { type: String },
   aiProcessed: { type: Boolean, default: false },
-  workback: [
-    {
-      title: { type: String, required: true },
-      scheduledEnd: { type: String, required: true },
-      estimatedTime: { type: Number }
+  workback: [{
+    title: { type: String, required: true },
+    scheduledEnd: { 
+      type: String, 
+      required: false,
+      default: null
+    },
+    estimatedTime: { 
+      type: Number, 
+      min: 1, 
+      default: 30,
+      get: (v: number) => Math.round(v / 5) * 5
     }
-  ]
+  }],
+  emotionalProfile: {
+    stressLevel: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'overwhelming'],
+      required: false,
+      validate: {
+        validator: function(value: any) {
+          if (!value) return true; // Optional field
+          return ['low', 'medium', 'high', 'overwhelming'].includes(value);
+        },
+        message: 'Invalid stress level value'
+      }
+    },
+    emotionalImpact: {
+      type: String,
+      enum: ['positive', 'neutral', 'negative'],
+      required: false,
+      validate: {
+        validator: function(value: any) {
+          if (!value) return true; // Optional field
+          return ['positive', 'neutral', 'negative'].includes(value);
+        },
+        message: 'Invalid emotional impact value'
+      }
+    },
+    energyLevel: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      required: false,
+      validate: {
+        validator: function(value: any) {
+          if (!value) return true; // Optional field
+          return ['low', 'medium', 'high'].includes(value);
+        },
+        message: 'Invalid energy level value'
+      }
+    },
+    motivationLevel: {
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      required: false,
+      validate: {
+        validator: function(value: any) {
+          if (!value) return true; // Optional field
+          return ['low', 'medium', 'high'].includes(value);
+        },
+        message: 'Invalid motivation level value'
+      }
+    },
+    emotionalTriggers: [{ type: String, trim: true }],
+    copingStrategies: [{ type: String, trim: true }],
+    lastEmotionalCheck: { type: Date }
+  },
+  lifeDomain: {
+    type: String,
+    enum: ['purple', 'blue', 'yellow', 'green', 'orange', 'red'],
+    required: false,
+    validate: {
+      validator: function(value: any) {
+        if (!value) return true; // Optional field
+        return ['purple', 'blue', 'yellow', 'green', 'orange', 'red'].includes(value);
+      },
+      message: 'Invalid life domain value'
+    }
+  }
 }, {
-  timestamps: true
+  timestamps: true,
+  toJSON: { getters: true },
+  toObject: { getters: true }
 });
 
 // Indexes for better query performance
-TaskSchema.index({ createdBy: 1, status: 1 });
 TaskSchema.index({ scheduledEnd: 1 });
 TaskSchema.index({ category: 1, priority: 1 });
+
+// Add index for emotional profile queries
+TaskSchema.index({ 'emotionalProfile.stressLevel': 1 });
+TaskSchema.index({ lifeDomain: 1 });
+
+// Add indexes for commonly queried fields
+TaskSchema.index({ createdBy: 1, scheduledEnd: 1 });
+TaskSchema.index({ createdBy: 1, category: 1 });
+TaskSchema.index({ createdBy: 1, createdAt: -1 });
+TaskSchema.index({ createdBy: 1, priority: 1 });
+
+// Add compound index for task list queries
+TaskSchema.index({ 
+  createdBy: 1, 
+  scheduledEnd: 1, 
+  status: 1, 
+  priority: 1 
+});
+
+// Update pre-save middleware to handle workback items more robustly
+TaskSchema.pre('save', function(this: ITask, next) {
+  // Update lastEmotionalCheck if emotional profile changed
+  if (this.isModified('emotionalProfile') && this.emotionalProfile) {
+    this.emotionalProfile.lastEmotionalCheck = new Date();
+  }
+
+  // Process workback items if they exist and have been modified
+  if (this.isModified('workback') && Array.isArray(this.workback) && this.workback.length > 0) {
+    const now = new Date();
+    const nyNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    
+    if (this.scheduledEnd) {
+      // If task has a deadline, use it to space workback items
+      const deadline = new Date(this.scheduledEnd);
+      const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const totalDuration = deadlineNY.getTime() - nyNow.getTime();
+      
+      // Calculate spacing between items, ensuring at least 15 minutes between steps
+      const minSpacing = 15 * 60 * 1000; // 15 minutes in milliseconds
+      const spacing = Math.max(minSpacing, Math.floor(totalDuration / (this.workback.length + 1)));
+      
+      this.workback = this.workback.map((item, index) => {
+        const itemEndTime = new Date(nyNow.getTime() + (spacing * (index + 1)));
+        // Ensure the item ends before the deadline
+        if (itemEndTime > deadlineNY) {
+          itemEndTime.setTime(deadlineNY.getTime() - minSpacing);
+        }
+        return {
+          ...item,
+          scheduledEnd: itemEndTime.toISOString(),
+          estimatedTime: Math.max(15, Math.round((item.estimatedTime || 30) / 5) * 5)
+        };
+      });
+    } else {
+      // For tasks without deadlines, space items over a week
+      const weekInMs = 7 * 24 * 60 * 60 * 1000;
+      const spacing = Math.floor(weekInMs / (this.workback.length + 1));
+      const startDate = new Date(nyNow);
+      startDate.setDate(startDate.getDate() + 1);
+      startDate.setHours(10, 0, 0, 0); // Start at 10 AM next day
+      
+      this.workback = this.workback.map((item, index) => {
+        const itemEndTime = new Date(startDate.getTime() + (spacing * (index + 1)));
+        return {
+          ...item,
+          scheduledEnd: itemEndTime.toISOString(),
+          estimatedTime: Math.max(15, Math.round((item.estimatedTime || 30) / 5) * 5)
+        };
+      });
+    }
+  }
+  
+  next();
+});
 
 export default mongoose.model<ITask>('Task', TaskSchema);

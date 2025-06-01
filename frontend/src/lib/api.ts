@@ -29,6 +29,15 @@ export interface Task {
   completedAt?: string;
   aiProcessed?: boolean;
   originalInput?: string;
+  emotionalProfile?: {
+    stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+    emotionalImpact: 'positive' | 'neutral' | 'negative';
+    energyLevel: 'low' | 'medium' | 'high';
+    motivationLevel: 'low' | 'medium' | 'high';
+    emotionalTriggers?: string[];
+    copingStrategies?: string[];
+  };
+  lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
 }
 
 interface ApiResponse<T> {
@@ -127,5 +136,12 @@ export const api = {
       body: JSON.stringify({ actualTime })
     });
     return handleResponse<Task>(response);
+  },
+
+  async deleteAllTasks(userId: string): Promise<ApiResponse<void>> {
+    const response = await fetch(`${API_URL}/api/tasks/all?userId=${userId}`, {
+      method: 'DELETE'
+    });
+    return handleResponse<void>(response);
   }
 }; 

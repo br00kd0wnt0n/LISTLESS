@@ -19,6 +19,15 @@ interface AITaskResponse {
     }>;
     startBy?: string;
     startByAlert?: string;
+    emotionalProfile?: {
+      stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+      emotionalImpact: 'positive' | 'neutral' | 'negative';
+      energyLevel: 'low' | 'medium' | 'high';
+      motivationLevel: 'low' | 'medium' | 'high';
+      emotionalTriggers?: string[];
+      copingStrategies?: string[];
+    };
+    lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
   }>;
   clarifications?: string[];
 }
@@ -85,7 +94,7 @@ function getRelativeDate(daysFromNow: number, hour?: number, minute?: number): s
 }
 
 // Add this helper function after getRelativeDate
-function roundToNearest5Minutes(minutes: number): number {
+export function roundToNearest5Minutes(minutes: number): number {
   return Math.round(minutes / 5) * 5;
 }
 
@@ -193,6 +202,61 @@ export function calculateWorkbackTimes(deadline: Date, totalDuration: number): W
   return workbackItems;
 }
 
+// Add this helper function after getOpenAIClient
+function createFallbackTask(input: string, userId: string) {
+  // Create a basic task without AI processing
+  const task: {
+    title: string;
+    description: string;
+    category: string;
+    priority: string;
+    estimatedTime: number;
+    status: string;
+    createdBy: string;
+    aiProcessed: boolean;
+    workback: Array<{
+      title: string;
+      scheduledEnd: string;
+      estimatedTime: number;
+    }>;
+    lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
+  } = {
+    title: input,
+    description: `Task created from: "${input}"`,
+    category: 'other',
+    priority: 'medium',
+    estimatedTime: 30,
+    status: 'todo',
+    createdBy: userId,
+    aiProcessed: false,
+    workback: [
+      {
+        title: 'Step 1: Initial planning',
+        scheduledEnd: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), // Tomorrow
+        estimatedTime: 15
+      },
+      {
+        title: 'Step 2: Execution',
+        scheduledEnd: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(), // Day after tomorrow
+        estimatedTime: 15
+      }
+    ]
+  };
+
+  // Assign domain based on category
+  task.lifeDomain = (() => {
+    const category = task.category.toLowerCase();
+    if (category === 'work') return 'purple';
+    if (category === 'personal' || category === 'learning') return 'blue';
+    if (category === 'family' || category === 'social') return 'yellow';
+    if (category === 'health') return 'green';
+    if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
+    return 'orange'; // Default to life maintenance for unknown categories
+  })();
+
+  return task;
+}
+
 export class AIController {
   // Process natural language input into tasks
   async processTaskInput(req: Request, res: Response) {
@@ -207,8 +271,27 @@ export class AIController {
         });
       }
 
-      // Get OpenAI client (will throw if API key is not configured)
-      const client = getOpenAIClient();
+      let client: OpenAI;
+      try {
+        client = getOpenAIClient();
+      } catch (error) {
+        console.error('Failed to initialize OpenAI client:', error);
+        // Create a fallback task without AI processing
+        const fallbackTask = createFallbackTask(input, userId);
+        return res.json({
+          success: true,
+          data: {
+            tasks: [fallbackTask],
+            clarifications: ['AI processing unavailable. Created basic task instead.'],
+            originalInput: input
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            aiModel: 'fallback'
+          }
+        });
+      }
+
       const currentTimeNY = getCurrentTimeInNY();
       const currentDateISO = getReferenceDate().toISOString();
       const currentYear = getReferenceDate().getFullYear();
@@ -222,10 +305,13 @@ Current date and time (ISO): ${currentDateISO}
 Current year: ${currentYear}
 
 Please respond with a JSON object containing a "tasks" array. For each task:
+
 1. ALWAYS include an "estimatedTime" field (in minutes) based on typical task complexity:
    - Round all time estimates to the nearest 5 minutes (e.g., 15, 20, 25, 30, etc.)
    - For tasks under 15 minutes, use 15 minutes as the minimum
    - For tasks over 2 hours, round to the nearest 15 minutes
+   - For tasks without deadlines, still provide realistic time estimates to help with planning
+
 2. For task categories, use ONLY these valid values:
    - "work" for work-related tasks
    - "household" for home maintenance and chores
@@ -237,8 +323,9 @@ Please respond with a JSON object containing a "tasks" array. For each task:
    - "social" for social activities
    - "other" for anything else
    CRITICAL: Map pet care tasks to "personal" category
+
 3. For tasks with deadlines:
-   - CRITICAL: Always use the current year (${currentYear}) for all dates
+   - CRITICAL: Always use the current year (${currentYear})
    - If a task mentions "tonight" or "today" with a specific time:
      * Use the specified time in America/New_York timezone for TODAY (${currentTimeNY.split(',')[0]})
      * If the time has already passed today, use tomorrow at the same time
@@ -248,35 +335,119 @@ Please respond with a JSON object containing a "tasks" array. For each task:
    - For tasks with "before X time", use that time as the deadline in America/New_York timezone
    - For tasks with "by X time", use that time as the deadline in America/New_York timezone
    - For reservations, use the reservation deadline (not the event time) as "scheduledEnd"
-4. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
-5. Include a "startByAlert" field with a friendly message (e.g., "⏰ Start by 9:00 AM tomorrow to finish on time!")
-6. For workback schedules:
+
+4. For tasks WITHOUT deadlines:
+   - DO NOT set a scheduledEnd date
+   - Instead, include a "suggestedStartBy" field (ISO 8601) based on:
+     * Task priority and importance
+     * Current workload and context
+     * Task dependencies or prerequisites
+     * Natural task urgency (e.g., health tasks should be scheduled sooner)
+   - Include a "planningGuidance" field with healthy planning recommendations:
+     * Break down large tasks into smaller, manageable steps
+     * Suggest optimal times of day based on task type and energy requirements
+     * Recommend buffer time between tasks
+     * Consider task dependencies and prerequisites
+     * Suggest realistic daily/weekly task limits
+   - Set priority based on:
+     * Task importance and impact
+     * Natural urgency (health, safety, etc.)
+     * Dependencies on other tasks
+     * Current workload and context
+
+5. For time-sensitive tasks, include a "startBy" field (ISO 8601) calculated as: scheduledEnd - estimatedTime
+
+6. Include a "startByAlert" field with a friendly message:
+   - For tasks with deadlines: "⏰ Start by [time] to finish on time!"
+   - For tasks without deadlines: "💡 Consider starting by [suggested time] for optimal planning"
+
+7. For workback schedules:
    - ALWAYS include a "workback" array for tasks that:
      * Have a deadline more than 24 hours away
      * Require multiple steps or preparation
      * Depend on other tasks or resources
      * Are time-sensitive (like reservations, appointments, etc.)
-   - Each workback item must have:
+     * Are large or complex, even without deadlines
+   - Each workback item MUST have:
      * A descriptive title
-     * A scheduledEnd time (MUST be before the main task deadline)
+     * A scheduledEnd time in ISO 8601 format (e.g., "2024-03-20T15:00:00.000-04:00")
      * An estimatedTime in minutes (rounded to nearest 5 minutes)
      * A clear sequence (e.g., "Step 1: Research", "Step 2: Draft", etc.)
-   - Workback schedule rules:
-     * For tasks due within 2 hours:
-       - First workback item should be due 25% of total time before the deadline
-       - Second workback item should be due 75% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * For tasks due within 4 hours:
-       - First workback item should be due 30% of total time before the deadline
-       - Second workback item should be due 70% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * For tasks due in more than 4 hours:
-       - First workback item should be due 40% of total time before the deadline
-       - Second workback item should be due 60% of total time before the deadline
-       - Total workback time should equal the main task's estimatedTime
-     * Each workback item should be spaced at least 15 minutes apart
-     * The first workback item should start at least 30 minutes before the last workback item
-     * CRITICAL: All workback times must use the current year (${currentYear})
+   - For tasks WITH deadlines:
+     * Each workback item's scheduledEnd MUST be before the main task deadline
+     * Space items evenly between now and the deadline
+     * Include buffer time between steps
+   - For tasks WITHOUT deadlines:
+     * Use actual dates starting from tomorrow
+     * Space items evenly over a reasonable timeframe (e.g., 1 week)
+     * Each workback item MUST have a valid ISO 8601 date
+     * Example for a task without deadline:
+       {
+         "workback": [
+           {
+             "title": "Step 1: Initial planning",
+             "scheduledEnd": "${getRelativeDate(1, 10, 0)}", // Tomorrow at 10 AM
+             "estimatedTime": 30
+           },
+           {
+             "title": "Step 2: Research",
+             "scheduledEnd": "${getRelativeDate(2, 14, 0)}", // Day after tomorrow at 2 PM
+             "estimatedTime": 45
+           }
+         ]
+       }
+
+8. For emotional intelligence analysis, ALWAYS include an "emotionalProfile" object with:
+   - "stressLevel": Assess the potential stress level of the task:
+     * "low" for routine, simple tasks
+     * "medium" for moderately challenging tasks
+     * "high" for complex or time-sensitive tasks
+     * "overwhelming" for tasks that might cause significant stress
+   - "emotionalImpact": Evaluate how the task might affect emotions:
+     * "positive" for tasks that bring joy or satisfaction
+     * "neutral" for routine tasks
+     * "negative" for tasks that might cause anxiety or stress
+   - "energyLevel": Estimate the energy required:
+     * "low" for simple, quick tasks
+     * "medium" for standard tasks
+     * "high" for demanding tasks
+   - "motivationLevel": Assess the likely motivation level:
+     * "low" for tasks that might be procrastinated
+     * "medium" for standard tasks
+     * "high" for engaging or rewarding tasks
+   - "emotionalTriggers": Optional array of potential emotional triggers
+   - "copingStrategies": Optional array of suggested coping strategies
+   - For tasks without deadlines:
+     * Consider the impact of open-ended nature on stress
+     * Include strategies for maintaining motivation
+     * Suggest ways to break down the task to reduce overwhelm
+     * Recommend regular progress check-ins
+
+9. For life domain color, assign ONE of these colors based on the task's primary life area:
+   - "purple" for work and career (e.g., client presentations, work projects, professional development, work meetings)
+   - "blue" for personal growth and learning (e.g., studying, skill development, personal projects, self-improvement)
+   - "yellow" for people and relationships (e.g., family events, social gatherings, relationship maintenance, dinner reservations, social activities)
+   - "green" for health and wellness (e.g., medical appointments, exercise, self-care, mental health)
+   - "orange" for life maintenance (e.g., cleaning, chores, administrative tasks, household management, errands)
+   - "red" ONLY for truly urgent or critical tasks (e.g., emergencies, immediate deadlines, critical issues)
+
+CRITICAL DOMAIN MAPPING RULES:
+1. ALL social activities (dinner reservations, gatherings, etc.) MUST be "yellow"
+2. ALL cleaning, chores, and household tasks MUST be "orange"
+3. ALL work-related tasks MUST be "purple"
+4. ALL family and relationship activities MUST be "yellow"
+5. ALL personal growth and learning activities MUST be "blue"
+6. ALL health and wellness activities MUST be "green"
+7. ONLY use "red" for truly urgent or critical tasks
+
+Example domain assignments:
+- "Make dinner reservation" -> "yellow" (social/relationship activity)
+- "Clean the house" -> "orange" (life maintenance)
+- "Study for exam" -> "blue" (personal growth)
+- "Family game night" -> "yellow" (relationship activity)
+- "Work presentation" -> "purple" (work)
+- "Doctor appointment" -> "green" (health)
+- "Emergency car repair" -> "red" (urgent)
 
 Important rules:
 1. All times must be in America/New_York timezone (-04:00)
@@ -286,43 +457,69 @@ Important rules:
      * If the time hasn't passed today in NY timezone, use today at that time
    - "tomorrow" means TOMORROW (next day) with the specified time in NY timezone
    - If no specific time is mentioned, use end of day (11:59 PM) in NY timezone
-   - CRITICAL: Always use the current year (${currentYear}) for all dates
+   - CRITICAL: Always use the current year (${currentYear})
 3. Always estimate task duration in minutes, rounded to nearest 5 minutes
 4. For time-sensitive tasks:
    - Calculate startBy = scheduledEnd - estimatedTime
    - Include a friendly startByAlert with emoji
    - For reservations, use the reservation deadline (not event time) as the main deadline
+5. For tasks without deadlines:
+   - Focus on healthy planning principles
+   - Suggest realistic timeframes based on task complexity
+   - Include guidance for breaking down large tasks
+   - Consider energy levels and task dependencies
+   - Recommend buffer time between tasks
+6. For emotional analysis:
+   - Consider the task's complexity, deadline (or lack thereof), and personal impact
+   - Assess potential stress and emotional impact realistically
+   - Provide specific coping strategies for high-stress tasks
+   - Choose the most relevant life domain color
+   - For tasks without deadlines, include strategies for maintaining motivation
 
-Example response for a task with "tomorrow" deadline:
+Example response for a task without deadline:
 {
   "tasks": [
     {
-      "title": "Clean the car",
-      "description": "Clean the car before 10am tomorrow",
-      "category": "household",
+      "title": "Prepare quarterly client presentation",
+      "description": "Create and practice presentation for the quarterly review meeting",
+      "category": "work",
       "priority": "high",
-      "estimatedTime": 60,
-      "scheduledEnd": "${getRelativeDate(1, 10, 0)}", // Tomorrow at 10am
-      "startBy": "${getRelativeDate(1, 9, 0)}", // Tomorrow at 9am
-      "startByAlert": "⏰ Start by 9:00 AM tomorrow to finish on time!",
+      "estimatedTime": 180,
+      "emotionalProfile": {
+        "stressLevel": "high",
+        "emotionalImpact": "neutral",
+        "energyLevel": "high",
+        "motivationLevel": "medium",
+        "emotionalTriggers": ["public speaking anxiety", "time pressure"],
+        "copingStrategies": [
+          "break into smaller tasks",
+          "practice breathing exercises",
+          "review key points"
+        ]
+      },
+      "lifeDomain": "purple",  // Work tasks are now purple
       "workback": [
         {
-          "title": "Step 1: Gather cleaning supplies",
-          "scheduledEnd": "${getRelativeDate(1, 9, 0)}", // Tomorrow at 9am
-          "estimatedTime": 20
+          "title": "Step 1: Research and outline",
+          "scheduledEnd": "${getRelativeDate(1, 10, 0)}",
+          "estimatedTime": 60
         },
         {
-          "title": "Step 2: Start cleaning the car",
-          "scheduledEnd": "${getRelativeDate(1, 9, 30)}", // Tomorrow at 9:30am
-          "estimatedTime": 40
+          "title": "Step 2: Create slides",
+          "scheduledEnd": "${getRelativeDate(2, 14, 0)}",
+          "estimatedTime": 90
+        },
+        {
+          "title": "Step 3: Practice presentation",
+          "scheduledEnd": "${getRelativeDate(3, 15, 0)}",
+          "estimatedTime": 30
         }
-      ],
-      "tags": ["cleaning", "car"]
+      ]
     }
   ]
 }
 
-Focus on extracting actionable tasks with realistic time estimates (rounded to 5 minutes) and appropriate workback schedules. If the input mentions specific times, use them; otherwise, make reasonable estimates based on typical task complexity. CRITICAL: Always use the current year (${currentYear}) for all dates.
+Focus on extracting actionable tasks with realistic time estimates, appropriate workback schedules, and thoughtful emotional intelligence analysis. Consider both the practical and emotional aspects of each task, whether it has a deadline or not.
       `;
 
       const completion = await client.chat.completions.create({
@@ -355,21 +552,48 @@ Focus on extracting actionable tasks with realistic time estimates (rounded to 5
         throw new Error('Invalid AI response format');
       }
 
-      // After parsing the AI response, adjust workback times if needed
+      // Update the task processing section
       const processedTasks = parsedResponse.tasks.map(taskData => {
-        if (taskData.scheduledEnd && taskData.workback && taskData.estimatedTime) {
-          const deadline = new Date(taskData.scheduledEnd);
-          const workbackTimes = calculateWorkbackTimes(deadline, taskData.estimatedTime);
-          
-          // Round the main task's estimated time
-          taskData.estimatedTime = roundToNearest5Minutes(taskData.estimatedTime);
-          
-          // Update workback items with calculated times and rounded estimates, maintaining order
-          taskData.workback = workbackTimes.map((item, index) => ({
-            ...taskData.workback![index], // Keep the original title and other properties
-            scheduledEnd: item.scheduledEnd.toISOString(),
-            estimatedTime: roundToNearest5Minutes(item.estimatedTime)
-          }));
+        if (taskData.workback && taskData.workback.length > 0) {
+          // For tasks with deadlines, use calculateWorkbackTimes
+          if (taskData.scheduledEnd && taskData.estimatedTime) {
+            const deadline = new Date(taskData.scheduledEnd);
+            const workbackTimes = calculateWorkbackTimes(deadline, taskData.estimatedTime);
+            
+            taskData.estimatedTime = roundToNearest5Minutes(taskData.estimatedTime);
+            
+            taskData.workback = workbackTimes.map((item, index) => ({
+              ...taskData.workback![index],
+              scheduledEnd: item.scheduledEnd.toISOString(),
+              estimatedTime: roundToNearest5Minutes(item.estimatedTime)
+            }));
+          } else {
+            // For tasks without deadlines, ensure each workback item has a valid ISO date
+            const now = getReferenceDate();
+            const defaultSpacing = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+            
+            taskData.workback = taskData.workback.map((item, index) => {
+              // If the scheduledEnd is not a valid ISO date, calculate one
+              let scheduledEnd: Date;
+              try {
+                scheduledEnd = new Date(item.scheduledEnd);
+                if (isNaN(scheduledEnd.getTime())) {
+                  throw new Error('Invalid date');
+                }
+              } catch {
+                // Calculate a date based on index
+                scheduledEnd = new Date(now.getTime() + (defaultSpacing * (index + 1)));
+                // Set to 10 AM by default
+                scheduledEnd.setHours(10, 0, 0, 0);
+              }
+              
+              return {
+                ...item,
+                scheduledEnd: scheduledEnd.toISOString(),
+                estimatedTime: roundToNearest5Minutes(item.estimatedTime || 30)
+              };
+            });
+          }
         }
         
         return {
@@ -382,7 +606,16 @@ Focus on extracting actionable tasks with realistic time estimates (rounded to 5
           startBy: taskData.startBy,
           startByAlert: taskData.startByAlert,
           workback: taskData.workback,
-          estimatedTime: roundToNearest5Minutes(taskData.estimatedTime || 30) // Default to 30 minutes if not provided
+          estimatedTime: roundToNearest5Minutes(taskData.estimatedTime || 30),
+          emotionalProfile: taskData.emotionalProfile ? {
+            stressLevel: taskData.emotionalProfile.stressLevel,
+            emotionalImpact: taskData.emotionalProfile.emotionalImpact,
+            energyLevel: taskData.emotionalProfile.energyLevel,
+            motivationLevel: taskData.emotionalProfile.motivationLevel,
+            emotionalTriggers: taskData.emotionalProfile.emotionalTriggers || [],
+            copingStrategies: taskData.emotionalProfile.copingStrategies || []
+          } : undefined,
+          lifeDomain: taskData.lifeDomain
         };
       });
 
@@ -401,6 +634,27 @@ Focus on extracting actionable tasks with realistic time estimates (rounded to 5
 
     } catch (error) {
       console.error('Error processing AI task input:', error);
+      
+      // If it's a connection error, create a fallback task
+      if (error instanceof Error && 
+          (error.message.includes('Connection error') || 
+           error.message.includes('ENOTFOUND') ||
+           error.message.includes('getaddrinfo'))) {
+        const fallbackTask = createFallbackTask(req.body.input, req.query.userId as string);
+        return res.json({
+          success: true,
+          data: {
+            tasks: [fallbackTask],
+            clarifications: ['AI processing unavailable due to connection issues. Created basic task instead.'],
+            originalInput: req.body.input
+          },
+          meta: {
+            timestamp: new Date().toISOString(),
+            aiModel: 'fallback'
+          }
+        });
+      }
+
       res.status(500).json({
         success: false,
         error: {

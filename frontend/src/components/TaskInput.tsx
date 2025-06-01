@@ -56,10 +56,10 @@ export function TaskInput({ taskManager }: TaskInputProps) {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="w-full">
+      <form onSubmit={handleSubmit} className="space-y-6">
         <div>
-          <label htmlFor="task-input" className="block text-sm font-medium text-gray-700 mb-2">
+          <label htmlFor="task-input" className="block text-2xl font-semibold text-gray-900 mb-3">
             Tell me what you need to do
           </label>
           <textarea
@@ -67,12 +67,12 @@ export function TaskInput({ taskManager }: TaskInputProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="e.g., 'I need to clean the house before guests arrive this weekend, do grocery shopping, and prepare for Monday's presentation'"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            className="w-full px-4 py-4 text-lg border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none bg-white/50 backdrop-blur-sm"
             rows={4}
             disabled={processing}
           />
           {(error || aiError) && (
-            <p className="mt-2 text-sm text-red-600">
+            <p className="mt-2 text-sm font-medium text-red-600">
               {error || aiError}
             </p>
           )}
@@ -81,11 +81,11 @@ export function TaskInput({ taskManager }: TaskInputProps) {
         <button
           type="submit"
           disabled={!input.trim() || processing}
-          className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+          className="w-full bg-blue-600 text-white px-6 py-4 text-lg font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 shadow-md"
         >
           {processing ? (
             <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
               <span>Processing...</span>
             </>
           ) : (
@@ -97,23 +97,20 @@ export function TaskInput({ taskManager }: TaskInputProps) {
         </button>
       </form>
       
-      <div className="mt-4 space-y-3">
+      <div className="mt-8 space-y-4">
         <CollapsibleTips title="Try saying" icon="💡">
-          <ul className="space-y-1 text-gray-500">
+          <ul className="space-y-2 text-base text-gray-600">
             <li>• "Schedule a dentist appointment and pick up dry cleaning"</li>
             <li>• "Plan weekend meal prep and grocery shopping"</li>
             <li>• "Organize kids' school supplies before Monday"</li>
-            <li>• "Prepare for next week's presentation by Friday, including research and slides"</li>
-            <li>• "Plan the house renovation project to be completed by end of month"</li>
           </ul>
         </CollapsibleTips>
         
         <CollapsibleTips title="Pro tip" icon="💡">
-          <p className="text-gray-600 mb-2">Include deadlines in your input to get AI-powered workback scheduling. For example:</p>
-          <ul className="space-y-1 text-gray-500">
+          <p className="text-base text-gray-600 mb-3">Include deadlines in your input to get AI-powered workback scheduling:</p>
+          <ul className="space-y-2 text-base text-gray-600">
             <li>• "Need to complete the quarterly report by Friday"</li>
             <li>• "Plan the team building event for next month"</li>
-            <li>• "Organize the conference by end of Q2"</li>
           </ul>
         </CollapsibleTips>
       </div>

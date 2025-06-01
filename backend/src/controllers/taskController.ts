@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import TaskModel, { ITask } from '../models/Task';
 import { validationResult } from 'express-validator';
-import { calculateWorkbackTimes, WorkbackTime } from './aiController';
+import { calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from './aiController';
 
 // Extend Express Request type to include user
 interface AuthenticatedRequest extends Request {
@@ -12,6 +12,37 @@ interface AuthenticatedRequest extends Request {
     id: string;
     email: string;
   };
+}
+
+// Add emotional profile interface
+interface EmotionalProfile {
+  stressLevel: 'low' | 'medium' | 'high' | 'overwhelming';
+  emotionalImpact: 'positive' | 'neutral' | 'negative';
+  energyLevel: 'low' | 'medium' | 'high';
+  motivationLevel: 'low' | 'medium' | 'high';
+  emotionalTriggers?: string[];
+  copingStrategies?: string[];
+}
+
+// Extend task data interface
+interface TaskData {
+  title: string;
+  description?: string;
+  category: string;
+  priority: string;
+  estimatedTime: number;
+  tags?: string[];
+  scheduledEnd?: string;
+  workback?: Array<{ 
+    title: string; 
+    scheduledEnd: string;
+    estimatedTime: number;
+  }>;
+  startBy?: string;
+  startByAlert?: string;
+  emotionalProfile?: EmotionalProfile;
+  lifeDomain?: 'purple' | 'blue' | 'yellow' | 'green' | 'orange' | 'red';
+  [key: string]: any; // Allow other fields
 }
 
 export default class TaskController {
@@ -70,42 +101,44 @@ export default class TaskController {
   // Create a new task
   async createTask(req: Request, res: Response) {
     try {
-      console.log('Task creation request body:', JSON.stringify(req.body, null, 2));
-      console.log('Task creation query params:', JSON.stringify(req.query, null, 2));
-      
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        console.error('Task validation errors:', {
-          errors: errors.array(),
-          requestBody: req.body,
-          validationRules: {
-            title: { required: true, minLength: 1, maxLength: 200 },
-            category: { required: true, validValues: ['work', 'household', 'personal', 'family', 'health', 'finance', 'maintenance', 'social'] },
-            priority: { required: true, validValues: ['low', 'medium', 'high', 'urgent'] },
-            estimatedTime: { required: true, type: 'number', min: 1 }
-          }
-        });
+      const userId = req.query.userId as string;
+      const taskData = req.body;
+
+      if (!userId) {
         return res.status(400).json({
           success: false,
-          error: {
-            message: 'Validation failed',
-            details: errors.array()
-          }
+          error: { message: 'User ID is required' }
         });
       }
 
-      const userId = req.query.userId as string;
-      if (!userId) {
-        console.error('Missing userId in query params');
-        return res.status(400).json({ message: 'User ID is required' });
-      }
-
-      const taskData = req.body;
-      // Remove _id if it exists to let MongoDB generate it
+      // Strip out _id field if it exists
       const { _id, ...taskDataWithoutId } = taskData;
-      
+
+      // Ensure emotional profile fields are properly typed
+      const emotionalProfile = taskData.emotionalProfile ? {
+        stressLevel: taskData.emotionalProfile.stressLevel,
+        emotionalImpact: taskData.emotionalProfile.emotionalImpact,
+        energyLevel: taskData.emotionalProfile.energyLevel,
+        motivationLevel: taskData.emotionalProfile.motivationLevel,
+        emotionalTriggers: taskData.emotionalProfile.emotionalTriggers || [],
+        copingStrategies: taskData.emotionalProfile.copingStrategies || []
+      } : undefined;
+
+      // Assign domain based on category if not provided
+      const lifeDomain = taskData.lifeDomain || (() => {
+        const category = taskData.category.toLowerCase();
+        if (category === 'work') return 'purple';
+        if (category === 'personal' || category === 'learning') return 'blue';
+        if (category === 'family' || category === 'social') return 'yellow';
+        if (category === 'health') return 'green';
+        if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
+        return 'orange'; // Default to life maintenance for unknown categories
+      })();
+
       const task = new TaskModel({
         ...taskDataWithoutId,
+        emotionalProfile,
+        lifeDomain,
         createdBy: userId
       });
 
