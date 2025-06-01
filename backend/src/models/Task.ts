@@ -24,7 +24,7 @@ export interface ITask extends Document {
   aiProcessed?: boolean;
   workback?: Array<{
     title: string;
-    scheduledEnd: string;
+    scheduledEnd?: string;
     estimatedTime?: number;
   }>;
   emotionalProfile?: {

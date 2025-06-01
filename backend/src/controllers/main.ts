@@ -313,20 +313,13 @@ export class TaskController {
         });
       }
 
-      // First get tasks with scheduledEnd dates
-      const tasksWithDeadlines = await TaskModel.find({ 
-        createdBy: userId,
-        scheduledEnd: { $exists: true, $ne: null }
-      }).sort({ scheduledEnd: 1 });
-
-      // Then get tasks without scheduledEnd dates
-      const tasksWithoutDeadlines = await TaskModel.find({ 
-        createdBy: userId,
-        scheduledEnd: { $exists: false }
-      }).sort({ createdAt: -1 });
-
-      // Combine the results
-      const tasks = [...tasksWithDeadlines, ...tasksWithoutDeadlines];
+      // Get all tasks for the user with proper sorting
+      const tasks = await TaskModel.find({ 
+        createdBy: userId
+      }).sort({ 
+        scheduledEnd: 1,  // Sort by scheduledEnd first
+        createdAt: -1     // Then by creation date for tasks without scheduledEnd
+      });
 
       // Set cache headers
       res.setHeader('Cache-Control', 'private, max-age=30'); // Cache for 30 seconds
