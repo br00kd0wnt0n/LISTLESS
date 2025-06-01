@@ -319,7 +319,7 @@ export class TaskController {
       }).sort({ 
         scheduledEnd: 1,  // Sort by scheduledEnd first
         createdAt: -1     // Then by creation date for tasks without scheduledEnd
-      });
+      }).lean();  // Use lean() for better performance
 
       // Set cache headers
       res.setHeader('Cache-Control', 'private, max-age=30'); // Cache for 30 seconds

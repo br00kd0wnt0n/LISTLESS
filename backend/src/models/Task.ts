@@ -191,6 +191,9 @@ TaskSchema.index({
   priority: 1 
 });
 
+// Remove duplicate index - keep only one instance of this index
+TaskSchema.index({ createdBy: 1, status: 1 });
+
 // Update pre-save middleware to handle workback items more robustly
 TaskSchema.pre('save', function(this: ITask, next) {
   // Update lastEmotionalCheck if emotional profile changed
