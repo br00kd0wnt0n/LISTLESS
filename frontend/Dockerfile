@@ -8,8 +8,12 @@ WORKDIR /app
 COPY package*.json ./
 COPY .npmrc ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies with more verbose output
+RUN echo "Node version:" && node -v && \
+    echo "NPM version:" && npm -v && \
+    echo "Current directory contents:" && ls -la && \
+    echo "Installing dependencies..." && \
+    npm install --verbose
 
 # Copy the rest of the application
 COPY . .
