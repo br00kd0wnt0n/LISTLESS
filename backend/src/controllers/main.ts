@@ -76,6 +76,24 @@ interface MongoError extends Error {
   code?: number;
 }
 
+// Add type guard for Date objects
+function isDate(value: unknown): value is Date {
+  return value instanceof Date && !isNaN(value.getTime());
+}
+
+// Add type guard for task object
+interface ITaskDocument {
+  scheduledEnd?: Date | string;
+  startBy?: Date | string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+  workback?: Array<{
+    scheduledEnd?: Date | string;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
 // Helper Functions
 function getReferenceDate(): Date {
   // Set reference date to May 27, 2025
@@ -290,7 +308,7 @@ function processWorkbackItems(taskData: ProcessedTaskData, deadline?: Date): Pro
 }
 
 // Main Controller Class
-export class TaskController {
+export const TaskController = {
   constructor() {
     // Bind methods to ensure 'this' context is preserved
     this.getTasks = this.getTasks.bind(this);
@@ -300,56 +318,85 @@ export class TaskController {
     this.completeTask = this.completeTask.bind(this);
     this.processTaskInput = this.processTaskInput.bind(this);
     this.estimateTime = this.estimateTime.bind(this);
-  }
+  },
 
   // Task Management Methods
   async getTasks(req: Request, res: Response) {
     try {
-      const userId = req.query.userId as string;
-      if (!userId) {
-        return res.status(400).json({ 
-          success: false,
-          error: { message: 'User ID is required' }
-        });
+      const { 
+        status, 
+        category, 
+        priority, 
+        sortBy = 'scheduledEnd', // Default sort field
+        sortOrder = 'asc' // Default sort order
+      } = req.query;
+
+      // Build filter object
+      const filter: any = {};
+      if (status) filter.status = status;
+      if (category) filter.category = category;
+      if (priority) filter.priority = priority;
+
+      // Validate sort parameters
+      const allowedSortFields = ['scheduledEnd', 'startBy', 'createdAt', 'priority', 'title'] as const;
+      const allowedSortOrders = ['asc', 'desc'] as const;
+      
+      type SortField = typeof allowedSortFields[number];
+      type SortOrder = typeof allowedSortOrders[number];
+      
+      const finalSortBy = allowedSortFields.includes(sortBy as SortField) ? sortBy as SortField : 'scheduledEnd';
+      const finalSortOrder = allowedSortOrders.includes(sortOrder as SortOrder) ? sortOrder as SortOrder : 'asc';
+
+      // Create sort object
+      const sort: Record<SortField, 1 | -1> = {
+        [finalSortBy]: finalSortOrder === 'asc' ? 1 : -1
+      } as Record<SortField, 1 | -1>;
+
+      // Add secondary sort by createdAt for stability
+      if (finalSortBy !== 'createdAt') {
+        sort.createdAt = -1; // Most recent first as tiebreaker
       }
 
-      // Get all tasks for the user with proper sorting
-      const tasks = await TaskModel.find({ 
-        createdBy: userId
-      }).sort({ 
-        scheduledEnd: 1,  // Sort by scheduledEnd first
-        createdAt: -1     // Then by creation date for tasks without scheduledEnd
-      }).lean();  // Use lean() for better performance
+      const tasks = await TaskModel.find(filter)
+        .sort(sort)
+        .lean();
 
-      // Set cache headers to prevent caching
-      res.setHeader('Cache-Control', 'no-store, must-revalidate');
-      res.setHeader('Pragma', 'no-cache');
-      res.setHeader('Expires', '0');
+      // Transform dates to ISO strings for consistent JSON serialization
+      const transformedTasks = tasks.map(task => {
+        const transformed = { ...task } as ITaskDocument;
+        
+        // Handle date fields with type guards
+        const dateFields = ['scheduledEnd', 'startBy', 'createdAt', 'updatedAt'] as const;
+        dateFields.forEach(field => {
+          const value = transformed[field];
+          if (isDate(value)) {
+            transformed[field] = value.toISOString();
+          }
+        });
 
-      res.json({
-        success: true,
-        data: tasks,
-        meta: {
-          count: tasks.length,
-          timestamp: new Date().toISOString()
+        // Handle workback items
+        if (Array.isArray(transformed.workback)) {
+          transformed.workback = transformed.workback.map(item => {
+            const workbackItem = { ...item };
+            if (isDate(item.scheduledEnd)) {
+              workbackItem.scheduledEnd = item.scheduledEnd.toISOString();
+            }
+            return workbackItem;
+          });
         }
+
+        return transformed;
       });
+
+      res.json(transformedTasks);
     } catch (error) {
       console.error('Error fetching tasks:', error);
-      
-      // Enhanced error handling
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch tasks';
-      const errorDetails = error instanceof Error ? error.stack : undefined;
-      
-      res.status(500).json({
-        success: false,
-        error: { 
-          message: errorMessage,
-          details: process.env.NODE_ENV === 'development' ? errorDetails : undefined
-        }
+      res.status(500).json({ 
+        error: 'Failed to fetch tasks',
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
-  }
+  },
 
   async createTask(req: Request, res: Response) {
     try {
@@ -535,7 +582,7 @@ export class TaskController {
         }
       });
     }
-  }
+  },
 
   async updateTask(req: Request, res: Response) {
     try {
@@ -587,7 +634,7 @@ export class TaskController {
         error: { message: 'Failed to update task' }
       });
     }
-  }
+  },
 
   async deleteTask(req: Request, res: Response) {
     try {
@@ -615,7 +662,7 @@ export class TaskController {
         error: { message: 'Failed to delete task' }
       });
     }
-  }
+  },
 
   async completeTask(req: Request, res: Response) {
     try {
@@ -654,7 +701,7 @@ export class TaskController {
         error: { message: 'Failed to complete task' }
       });
     }
-  }
+  },
 
   // AI Processing Methods
   async processTaskInput(req: Request, res: Response) {
@@ -995,7 +1042,7 @@ Focus on extracting actionable tasks with realistic time estimates, appropriate 
         }
       });
     }
-  }
+  },
 
   // Update estimateTime method with proper types
   async estimateTime(req: Request, res: Response): Promise<void> {

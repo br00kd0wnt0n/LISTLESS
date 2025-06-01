@@ -78,28 +78,26 @@ const TaskSchema: Schema = new Schema({
     scheduledEnd: { 
       type: String, 
       required: false,
+      default: undefined,
       validate: {
         validator: function(value: any) {
-          // If no value is provided, it's valid (optional field)
-          if (!value) return true;
+          if (value === undefined || value === null) return true;
           
-          // Try to parse the date
           try {
             const date = new Date(value);
-            // Only validate format, not future date requirement
             return !isNaN(date.getTime());
           } catch {
             return false;
           }
         },
-        message: 'scheduledEnd must be a valid date in ISO format'
+        message: 'scheduledEnd must be a valid date in ISO format when provided'
       }
     },
     estimatedTime: { 
       type: Number, 
-      min: 15, // Minimum 15 minutes
+      min: 15,
       default: 30,
-      get: (v: number) => Math.round(v / 5) * 5 // Round to nearest 5 minutes
+      get: (v: number) => Math.round(v / 5) * 5
     }
   }],
   emotionalProfile: {
