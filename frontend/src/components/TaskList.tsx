@@ -223,7 +223,7 @@ const formatWorkbackStep = (step: WorkbackStep) => {
 };
 
 export function TaskList({ taskManager }: TaskListProps) {
-  const { tasks, loading, error, completeTask, deleteTask, fetchTasks, updateTask } = taskManager;
+  const { tasks, loading, error, completeTask, deleteTask, updateTask } = taskManager;
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [editingDuration, setEditingDuration] = useState<number | null>(null);
@@ -231,10 +231,6 @@ export function TaskList({ taskManager }: TaskListProps) {
     // Initialize with all task IDs to show workback details by default
     return new Set(tasks.map(task => task._id));
   });
-
-  useEffect(() => {
-    fetchTasks().catch(console.error);
-  }, [fetchTasks]);
 
   // Update expandedWorkbackTasks when tasks change
   useEffect(() => {
@@ -291,10 +287,9 @@ export function TaskList({ taskManager }: TaskListProps) {
       await updateTask(taskId, { estimatedTime: newDuration });
       setEditingTaskId(null);
       setEditingDuration(null);
-      await fetchTasks();
     } catch (error) {
-      console.error('Failed to update task duration:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to update task duration';
+      console.error('Failed to update task duration:', error);
       alert(`Failed to update task duration: ${errorMessage}`);
     }
   };
@@ -321,7 +316,7 @@ export function TaskList({ taskManager }: TaskListProps) {
           Error loading tasks: {error}
         </p>
         <button
-          onClick={fetchTasks}
+          onClick={() => taskManager.fetchTasks().catch(console.error)}
           className="mt-2 text-sm text-red-600 hover:text-red-800 underline"
         >
           Try again
