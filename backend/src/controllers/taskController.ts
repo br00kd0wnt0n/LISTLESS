@@ -4,8 +4,8 @@ import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import TaskModel, { ITask } from '../models/Task';
 import { validationResult } from 'express-validator';
-import { calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from './aiController';
-import { assignLifeDomain, isValidLifeDomain } from '../utils/taskUtils';
+import { getCurrentTimeInNY, getReferenceDate, getRelativeDate } from '../utils/dateUtils';
+import { assignLifeDomain, isValidLifeDomain, calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from '../utils/taskUtils';
 
 // Extend Express Request type to include user
 interface AuthenticatedRequest extends Request {

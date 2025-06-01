@@ -4,8 +4,7 @@ import OpenAI from 'openai';
 import TaskModel, { ITask } from '../models/Task';
 import { getOpenAIClient } from '../utils/openai';
 import { getCurrentTimeInNY, getReferenceDate, getRelativeDate } from '../utils/dateUtils';
-import { calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from './taskUtils';
-import { assignLifeDomain, isValidLifeDomain } from '../utils/taskUtils';
+import { assignLifeDomain, isValidLifeDomain, calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from '../utils/taskUtils';
 
 interface AITaskResponse {
   tasks: Array<{
@@ -36,179 +35,7 @@ interface AITaskResponse {
   clarifications?: string[];
 }
 
-// Initialize OpenAI client lazily
-let openai: OpenAI | null = null;
-
-function getOpenAIClient() {
-  if (!openai) {
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OpenAI API key not configured');
-    }
-    openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
-  }
-  return openai;
-}
-
-// Add this helper function at the top of the file after imports
-function getReferenceDate(): Date {
-  // Set reference date to May 27, 2025
-  const referenceDate = new Date('2025-05-27T00:00:00.000-04:00');
-  return referenceDate;
-}
-
-// Update getCurrentTimeInNY to use reference date
-function getCurrentTimeInNY(): string {
-  const now = getReferenceDate();
-  return now.toLocaleString('en-US', { 
-    timeZone: 'America/New_York',
-    weekday: 'long',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true
-  });
-}
-
-// Update getRelativeDate to use reference date
-function getRelativeDate(daysFromNow: number, hour?: number, minute?: number): string {
-  // Create date in NY timezone using reference date
-  const now = getReferenceDate();
-  const nyDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  nyDate.setDate(nyDate.getDate() + daysFromNow);
-  
-  // If specific time is provided, use it; otherwise use end of day
-  if (hour !== undefined && minute !== undefined) {
-    nyDate.setHours(hour, minute, 0, 0);
-  } else {
-    nyDate.setHours(23, 59, 59, 999);
-  }
-  
-  // Format the date in NY timezone with explicit year
-  const year = nyDate.getFullYear();
-  const month = String(nyDate.getMonth() + 1).padStart(2, '0');
-  const day = String(nyDate.getDate()).padStart(2, '0');
-  const hours = String(nyDate.getHours()).padStart(2, '0');
-  const minutes = String(nyDate.getMinutes()).padStart(2, '0');
-  
-  return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
-}
-
-// Add this helper function after getRelativeDate
-export function roundToNearest5Minutes(minutes: number): number {
-  return Math.round(minutes / 5) * 5;
-}
-
-// Update the calculateWorkbackTimes function to handle timezone correctly and ensure proper ordering
-export interface WorkbackTime {
-  scheduledEnd: Date;
-  estimatedTime: number;
-  title: string;
-}
-
-export function calculateWorkbackTimes(deadline: Date, totalDuration: number): WorkbackTime[] {
-  const workbackItems: WorkbackTime[] = [];
-  
-  // Convert deadline to NY timezone for consistent calculations
-  const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const nowNY = getReferenceDate(); // Use reference date instead of current date
-  
-  // Calculate hours until deadline in NY timezone
-  const hoursUntilDeadline = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60 * 60);
-  
-  // Helper function to create NY timezone date string
-  const createNYDateString = (date: Date) => {
-    const nyDate = new Date(date.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-    const year = nyDate.getFullYear();
-    const month = String(nyDate.getMonth() + 1).padStart(2, '0');
-    const day = String(nyDate.getDate()).padStart(2, '0');
-    const hours = String(nyDate.getHours()).padStart(2, '0');
-    const minutes = String(nyDate.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}:00.000-04:00`;
-  };
-  
-  // Calculate workback item durations based on total duration
-  let firstItemDuration, secondItemDuration;
-  
-  if (hoursUntilDeadline <= 2) {
-    // For tasks due within 2 hours
-    firstItemDuration = Math.floor(totalDuration * 0.25);
-    secondItemDuration = Math.floor(totalDuration * 0.75);
-  } else if (hoursUntilDeadline <= 4) {
-    // For tasks due within 4 hours
-    firstItemDuration = Math.floor(totalDuration * 0.3);
-    secondItemDuration = Math.floor(totalDuration * 0.7);
-  } else {
-    // For tasks due in more than 4 hours
-    firstItemDuration = Math.floor(totalDuration * 0.4);
-    secondItemDuration = Math.floor(totalDuration * 0.6);
-  }
-  
-  // Ensure minimum durations and round to nearest 5 minutes
-  firstItemDuration = Math.max(15, Math.round(firstItemDuration / 5) * 5);
-  secondItemDuration = Math.max(15, Math.round(secondItemDuration / 5) * 5);
-  
-  // Add a 15-minute buffer between items
-  const bufferMinutes = 15;
-  
-  // Calculate end times for each item, working backwards from the deadline
-  const secondItemEnd = new Date(deadlineNY);
-  const secondItemStart = new Date(secondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
-  const firstItemEnd = new Date(secondItemStart.getTime() - (bufferMinutes * 60 * 1000));
-  const firstItemStart = new Date(firstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
-  
-  // Verify that items don't overlap and are in the future
-  if (firstItemEnd <= firstItemStart || secondItemEnd <= secondItemStart || firstItemEnd >= secondItemStart) {
-    // If there's an overlap, adjust the durations to fit within the available time
-    const totalAvailableMinutes = (deadlineNY.getTime() - nowNY.getTime()) / (1000 * 60);
-    const adjustedTotalDuration = Math.min(totalDuration, totalAvailableMinutes - bufferMinutes);
-    
-    // Recalculate durations proportionally
-    firstItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.4) / 5) * 5);
-    secondItemDuration = Math.max(15, Math.round((adjustedTotalDuration * 0.6) / 5) * 5);
-    
-    // Recalculate times
-    const newSecondItemEnd = new Date(deadlineNY);
-    const newSecondItemStart = new Date(newSecondItemEnd.getTime() - (secondItemDuration * 60 * 1000));
-    const newFirstItemEnd = new Date(newSecondItemStart.getTime() - (bufferMinutes * 60 * 1000));
-    const newFirstItemStart = new Date(newFirstItemEnd.getTime() - (firstItemDuration * 60 * 1000));
-    
-    // Add items in chronological order (earliest first)
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(newFirstItemEnd)),
-      estimatedTime: firstItemDuration,
-      title: 'Step 1: Initial preparation'
-    });
-    
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(newSecondItemEnd)),
-      estimatedTime: secondItemDuration,
-      title: 'Step 2: Final completion'
-    });
-  } else {
-    // Add items in chronological order (earliest first)
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(firstItemEnd)),
-      estimatedTime: firstItemDuration,
-      title: 'Step 1: Initial preparation'
-    });
-    
-    workbackItems.push({
-      scheduledEnd: new Date(createNYDateString(secondItemEnd)),
-      estimatedTime: secondItemDuration,
-      title: 'Step 2: Final completion'
-    });
-  }
-  
-  return workbackItems;
-}
-
-// Add this helper function after getOpenAIClient
 function createFallbackTask(input: string, userId: string) {
-  // Create a basic task without AI processing
   const task: {
     title: string;
     description: string;
@@ -248,16 +75,7 @@ function createFallbackTask(input: string, userId: string) {
   };
 
   // Assign domain based on category
-  task.lifeDomain = (() => {
-    const category = task.category.toLowerCase();
-    if (category === 'work') return 'purple';
-    if (category === 'personal' || category === 'learning') return 'blue';
-    if (category === 'family' || category === 'social') return 'yellow';
-    if (category === 'health') return 'green';
-    if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
-    return 'orange'; // Default to life maintenance for unknown categories
-  })();
-
+  task.lifeDomain = assignLifeDomain(task.category, task.priority);
   return task;
 }
 
