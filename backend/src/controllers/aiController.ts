@@ -2,6 +2,10 @@
 import { Request, Response } from 'express';
 import OpenAI from 'openai';
 import TaskModel, { ITask } from '../models/Task';
+import { getOpenAIClient } from '../utils/openai';
+import { getCurrentTimeInNY, getReferenceDate, getRelativeDate } from '../utils/dateUtils';
+import { calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from './taskUtils';
+import { assignLifeDomain, isValidLifeDomain } from '../utils/taskUtils';
 
 interface AITaskResponse {
   tasks: Array<{
@@ -600,22 +604,12 @@ Focus on extracting actionable tasks with realistic time estimates, appropriate 
           }
         }
         
-        // Always assign a life domain
-        const lifeDomain = (() => {
-          // If a valid life domain is provided, use it
-          if (taskData.lifeDomain && ['purple', 'blue', 'yellow', 'green', 'orange', 'red'].includes(taskData.lifeDomain)) {
-            return taskData.lifeDomain;
-          }
-          
-          // Otherwise, assign based on category
-          const category = (taskData.category || 'other').toLowerCase();
-          if (category === 'work') return 'purple';
-          if (category === 'personal' || category === 'learning') return 'blue';
-          if (category === 'family' || category === 'social') return 'yellow';
-          if (category === 'health') return 'green';
-          if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
-          return 'orange'; // Default to life maintenance for unknown categories
-        })();
+        // Assign life domain using utility function
+        const lifeDomain = assignLifeDomain(
+          taskData.category,
+          taskData.priority,
+          taskData.lifeDomain
+        );
         
         return {
           ...taskData,

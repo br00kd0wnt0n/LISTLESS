@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import TaskModel, { ITask } from '../models/Task';
 import { validationResult } from 'express-validator';
 import { calculateWorkbackTimes, WorkbackTime, roundToNearest5Minutes } from './aiController';
+import { assignLifeDomain, isValidLifeDomain } from '../utils/taskUtils';
 
 // Extend Express Request type to include user
 interface AuthenticatedRequest extends Request {
@@ -63,20 +64,17 @@ export default class TaskController {
         return res.status(400).json({ message: 'User ID is required' });
       }
 
-      // First get tasks with scheduledEnd dates
-      const tasksWithDeadlines = await TaskModel.find({ 
-        createdBy: userId,
-        scheduledEnd: { $exists: true, $ne: null }
-      }).sort({ scheduledEnd: 1 });
-
-      // Then get tasks without scheduledEnd dates
-      const tasksWithoutDeadlines = await TaskModel.find({ 
-        createdBy: userId,
-        scheduledEnd: { $exists: false }
-      }).sort({ createdAt: -1 });
-
-      // Combine the results
-      const tasks = [...tasksWithDeadlines, ...tasksWithoutDeadlines];
+      // Use a single query with proper sorting
+      const tasks = await TaskModel.find({ 
+        createdBy: userId
+      }).sort({ 
+        // First sort by status to group completed tasks
+        status: 1,
+        // Then by scheduledEnd for tasks with deadlines
+        scheduledEnd: 1,
+        // Finally by creation date for tasks without deadlines
+        createdAt: -1
+      }).lean();
 
       // Prevent caching of the task list
       res.setHeader('Cache-Control', 'no-store');
@@ -124,22 +122,12 @@ export default class TaskController {
         copingStrategies: taskData.emotionalProfile.copingStrategies || []
       } : undefined;
 
-      // Always assign a life domain based on category
-      const lifeDomain = (() => {
-        // If a valid life domain is provided, use it
-        if (taskData.lifeDomain && ['purple', 'blue', 'yellow', 'green', 'orange', 'red'].includes(taskData.lifeDomain)) {
-          return taskData.lifeDomain;
-        }
-        
-        // Otherwise, assign based on category
-        const category = (taskData.category || 'other').toLowerCase();
-        if (category === 'work') return 'purple';
-        if (category === 'personal' || category === 'learning') return 'blue';
-        if (category === 'family' || category === 'social') return 'yellow';
-        if (category === 'health') return 'green';
-        if (category === 'household' || category === 'maintenance' || category === 'finance') return 'orange';
-        return 'orange'; // Default to life maintenance for unknown categories
-      })();
+      // Assign life domain using utility function
+      const lifeDomain = assignLifeDomain(
+        taskData.category,
+        taskData.priority,
+        taskData.lifeDomain
+      );
 
       // Create task with validated data
       const task = new TaskModel({

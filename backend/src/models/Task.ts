@@ -80,22 +80,27 @@ const TaskSchema: Schema = new Schema({
       required: false,
       validate: {
         validator: function(value: any) {
-          if (!value) return true; // Optional field
+          // If no value is provided, it's valid (optional field)
+          if (!value) return true;
+          
+          // Try to parse the date
           try {
             const date = new Date(value);
-            return !isNaN(date.getTime());
+            // Check if it's a valid date and not in the past
+            const now = new Date();
+            return !isNaN(date.getTime()) && date >= now;
           } catch {
             return false;
           }
         },
-        message: 'Invalid scheduledEnd date format'
+        message: 'scheduledEnd must be a valid future date in ISO format'
       }
     },
     estimatedTime: { 
       type: Number, 
-      min: 1, 
+      min: 15, // Minimum 15 minutes
       default: 30,
-      get: (v: number) => Math.round(v / 5) * 5
+      get: (v: number) => Math.round(v / 5) * 5 // Round to nearest 5 minutes
     }
   }],
   emotionalProfile: {
@@ -210,6 +215,12 @@ TaskSchema.pre('save', function(this: ITask, next) {
     if (this.scheduledEnd) {
       const deadline = new Date(this.scheduledEnd);
       const deadlineNY = new Date(deadline.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      
+      // Ensure deadline is in the future
+      if (deadlineNY <= nyNow) {
+        return next(new Error('Task deadline must be in the future'));
+      }
+      
       const totalDuration = deadlineNY.getTime() - nyNow.getTime();
       
       // Calculate spacing between items, ensuring at least 15 minutes between steps
