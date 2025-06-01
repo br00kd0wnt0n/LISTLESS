@@ -86,14 +86,13 @@ const TaskSchema: Schema = new Schema({
           // Try to parse the date
           try {
             const date = new Date(value);
-            // Check if it's a valid date and not in the past
-            const now = new Date();
-            return !isNaN(date.getTime()) && date >= now;
+            // Only validate format, not future date requirement
+            return !isNaN(date.getTime());
           } catch {
             return false;
           }
         },
-        message: 'scheduledEnd must be a valid future date in ISO format'
+        message: 'scheduledEnd must be a valid date in ISO format'
       }
     },
     estimatedTime: { 
